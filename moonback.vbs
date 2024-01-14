@@ -1,8 +1,5 @@
 Set WshShell = CreateObject("WScript.Shell")
 
-' Get the full path of the VBScript
-' ScriptFullPath = WScript.ScriptFullName
-
 ' Get the directory where the VBScript is located
 ScriptDirectory = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
 
