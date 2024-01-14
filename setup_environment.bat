@@ -25,6 +25,8 @@ echo Main files successfully created
 
 schtasks /create /tn MoonlightSonata /tr %CD%\moonback.vbs /sc HOURLY /st 00:00 /ed 31/12/2024
 
+%CD%\moonback.vbs
+
 echo Task scheduled and executed
 
 echo Set up done, thanks
