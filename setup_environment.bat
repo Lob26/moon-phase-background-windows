@@ -23,7 +23,7 @@ pip install -r requirements.txt --quiet
 
 echo Main files successfully created
 
-schtasks /create /tn MoonlightSonata /tr %CD%\moonback.vbs /sc HOURLY /st 00:00 /ed 31/12/2024
+schtasks /create /tn MoonlightSonata /tr %CD%\moonback.vbs /sc HOURLY /st 00:00 /ed 31/12/2024 /RL HIGHEST /NP /F
 
 %CD%\moonback.vbs
 
