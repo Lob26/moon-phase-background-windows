@@ -6,6 +6,7 @@ import ctypes
 import datetime
 import time
 import shutil
+import sys
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 magick_exe = shutil.which('magick')
@@ -46,7 +47,7 @@ def generate_wallpaper(is_big=False):
         image_file.write(response.content)
 
     # Wait for the download to complete
-    time.sleep(1)
+    time.sleep(2)
 
     # Replace original file with designated background file and add background and caption with ImageMagick
     subprocess.run([magick_exe, "composite", "-gravity", "center", im_path, best_tif_path, back_tif_path])
@@ -57,6 +58,11 @@ def generate_wallpaper(is_big=False):
 
     # Set desktop background using ctypes
     set_wallpaper(back_tif_path)
+
+    # Print to .log file
+    log_file_path = os.path.join(current_directory, ".log")
+    with open(log_file_path, 'a') as log_file:
+        log_file.write(f"{datetime.datetime.now()} - {text}\n")
 
     # Remove downloaded moon file to avoid using up storage
     os.remove(im_path)
