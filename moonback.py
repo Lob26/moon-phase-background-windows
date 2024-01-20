@@ -22,8 +22,8 @@ def generate_wallpaper(is_big=False):
     back_tif_path = os.path.join(current_directory, "back.tif")
     best_tif_path = os.path.join(current_directory, "best.tif" if is_big else "best_small.tif")
     # Get current hour of the year
-    num = math.floor((datetime.datetime.now().timetuple().tm_yday) * 24 + datetime.datetime.now().hour)
-
+    now = datetime.datetime.now()
+    num = math.floor((now.timetuple().tm_yday) * 24 + now.hour)
     # Get phase/illumination% from text file edited from "https://svs.gsfc.nasa.gov/vis/a000000/a005100/a005187/mooninfo_2024.txt"
     with open(os.path.join(current_directory, "data", "phase.txt")) as phase_file:
         phase = phase_file.readlines()[num].strip()
@@ -31,6 +31,7 @@ def generate_wallpaper(is_big=False):
     # Get age: days in moon cycle so far
     with open(os.path.join(current_directory, "data", "age.txt")) as age_file:
         age = age_file.readlines()[num].strip()
+
 
     # Caption
     text = f"Phase: {phase}% Days: {age}"
@@ -62,7 +63,7 @@ def generate_wallpaper(is_big=False):
     # Print to .log file
     log_file_path = os.path.join(current_directory, ".log")
     with open(log_file_path, 'a') as log_file:
-        log_file.write(f"{datetime.datetime.now()} - {text}\n")
+        log_file.write(f"{now} - {text}\n")
 
     # Remove downloaded moon file to avoid using up storage
     os.remove(im_path)
