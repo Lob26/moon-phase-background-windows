@@ -6,19 +6,18 @@ import ctypes
 import datetime
 import time
 import shutil
-import sys
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 magick_exe = shutil.which('magick')
 
 if not magick_exe:
     print("ImageMagick not found")
-    sys.exit(1)
+    raise SystemError
 
-def set_wallpaper(file_path):
+def set_wallpaper(file_path: str):
     ctypes.windll.user32.SystemParametersInfoW(20, 0, file_path, 3)
 
-def generate_wallpaper(is_big=False):
+def generate_wallpaper(is_big:bool=False):
     back_tif_path = os.path.join(current_directory, "back.tif")
     best_tif_path = os.path.join(current_directory, "best.tif" if is_big else "best_small.tif")
     # Get current hour of the year
@@ -40,9 +39,9 @@ def generate_wallpaper(is_big=False):
     im = f"moon.{num:04d}.tif"
     im_path = os.path.join(current_directory, im)
 
-    # URLs updated for 2024
-    base_url = "https://svs.gsfc.nasa.gov/vis/a000000/a005100/a005187/frames/"
-    image_url = f"{base_url}5760x3240_16x9_30p/plain/{im}" if is_big else f"{base_url}3840x2160_16x9_30p/plain/{im}"
+    # URLs updated for 2025
+    base_url = "https://svs.gsfc.nasa.gov/vis/a000000/a005400/a005415/frames"
+    image_url = f"{base_url}/5760x3240_16x9_30p/plain/{im}" if is_big else f"{base_url}/3840x2160_16x9_30p/plain/{im}"
     response = requests.get(image_url)
     with open(im_path, 'wb') as image_file:
         image_file.write(response.content)
@@ -51,11 +50,11 @@ def generate_wallpaper(is_big=False):
     time.sleep(2)
 
     # Replace original file with designated background file and add background and caption with ImageMagick
-    subprocess.run([magick_exe, "composite", "-gravity", "center", im_path, best_tif_path, back_tif_path])
+    subprocess.run([magick_exe, "composite", "-gravity", "center", im_path, best_tif_path, back_tif_path]) #type:ignore
     
     font_size = 80 if is_big else 50
     subprocess.run([magick_exe, "convert", "-font", "Verdana", "-fill", "#b1ada7", "-pointsize", str(font_size),
-                    "-gravity", "east", f"-draw", f"text {'150,1800' if is_big else '100,1200'} '{text}'", back_tif_path, back_tif_path])
+                    "-gravity", "east", "-draw", f"text {'150,1800' if is_big else '100,1200'} '{text}'", back_tif_path, back_tif_path]) #type:ignore
 
     # Set desktop background using ctypes
     set_wallpaper(back_tif_path)
