@@ -1,46 +1,53 @@
-import ctypes
-import datetime
-import math
+import logging
 import os
 import shutil
 import subprocess
-import time
+from ctypes import windll
+from datetime import datetime
 
 import requests
 
-current_directory = os.path.dirname(os.path.abspath(__file__))
-magick_exe = shutil.which("magick")
+logging.basicConfig(
+    filename=".log", level=logging.INFO, format="%(asctime)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
-def set_wallpaper(file_path: str):
-    ctypes.windll.user32.SystemParametersInfoW(20, 0, file_path, 3)
+def set_wallpaper(file_path: str | os.PathLike[str]):
+    windll.user32.SystemParametersInfoW(20, 0, file_path, 3)
 
 
 def generate_wallpaper(is_big: bool = False):
-    if not magick_exe:
-        print("ImageMagick not found")
-        raise SystemError
-    back_tif_path = os.path.join(current_directory, "back.tif")
-    best_tif_path = os.path.join(
-        current_directory, "best.tif" if is_big else "best_small.tif"
-    )
-    # Get current hour of the year
-    now = datetime.datetime.now()
-    num = math.floor((now.timetuple().tm_yday) * 24 + now.hour)
-    # Get phase/illumination% from text file edited from "https://svs.gsfc.nasa.gov/vis/a000000/a005100/a005187/mooninfo_2024.txt"
-    with open(os.path.join(current_directory, "data", "phase.txt")) as phase_file:
-        phase = phase_file.readlines()[num].strip()
+    CURRENT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+    MAGICK_EXE = shutil.which("magick")
 
-    # Get age: days in moon cycle so far
-    with open(os.path.join(current_directory, "data", "age.txt")) as age_file:
+    if not MAGICK_EXE:
+        logger.error("ImageMagick not found")
+        raise SystemError
+
+    BACK_TIF_PATH = os.path.join(CURRENT_DIRECTORY, "back.tif")
+    BEST_TIF_PATH = os.path.join(CURRENT_DIRECTORY, "best.tif" if is_big else "best_small.tif")  # fmt:skip
+
+    # Get current hour of the year
+    now = datetime.now()
+    num = (now.timetuple().tm_yday) * 24 + now.hour
+
+    # Get phase/illumination% from text file edited from "https://svs.gsfc.nasa.gov/vis/a000000/a005100/a005187/mooninfo_2024.txt"
+    data_dir = os.path.join(CURRENT_DIRECTORY, "data")
+
+    with (
+        open(os.path.join(data_dir, "phase.txt")) as phase_file,
+        open(os.path.join(data_dir, "age.txt")) as age_file,
+    ):
+        phase = phase_file.readlines()[num].strip()
         age = age_file.readlines()[num].strip()
 
     # Caption
-    text = f"Phase: {phase}% Days: {age}"
+    label = f"Phase: {phase}% Days: {age}"
 
     # Filename for downloaded image
     im = f"moon.{num:04d}.tif"
-    im_path = os.path.join(current_directory, im)
+    im_path = os.path.join(CURRENT_DIRECTORY, im)
 
     # URLs updated for 2025
     base_url = "https://svs.gsfc.nasa.gov/vis/a000000/a005400/a005415/frames"
@@ -49,55 +56,39 @@ def generate_wallpaper(is_big: bool = False):
         if is_big
         else f"{base_url}/3840x2160_16x9_30p/plain/{im}"
     )
-    response = requests.get(image_url)
-    with open(im_path, "wb") as image_file:
-        image_file.write(response.content)
 
-    # Wait for the download to complete
-    time.sleep(2)
+    response = requests.get(image_url, stream=True)
+    response.raise_for_status()
+    with open(im_path, "wb") as image_file:
+        shutil.copyfileobj(response.raw, image_file)
+    del response
 
     # Replace original file with designated background file and add background and caption with ImageMagick
-    subprocess.run(
-        [
-            magick_exe,
-            "composite",
-            "-gravity",
-            "center",
-            im_path,
-            best_tif_path,
-            back_tif_path,
-        ]
-    )  # type:ignore
+    try:
+        subprocess.run(
+            [MAGICK_EXE, "composite", "-gravity", "center", im_path, BEST_TIF_PATH, BACK_TIF_PATH],
+            check=True,
+        )  # fmt:skip
+    except subprocess.CalledProcessError as e:
+        logger.error(e)
+        raise SystemError
 
     font_size = 80 if is_big else 50
-    subprocess.run(
-        [
-            magick_exe,
-            "magick convert",
-            "-font",
-            "Verdana",
-            "-fill",
-            "#b1ada7",
-            "-pointsize",
-            str(font_size),
-            "-gravity",
-            "east",
-            "-draw",
-            f"text {'150,1800' if is_big else '100,1200'} '{text}'",
-            back_tif_path,
-            back_tif_path,
-        ]
-    )  # type:ignore
+    try:
+        subprocess.run(
+            [MAGICK_EXE, "convert", "-font", "Verdana", "-fill", "white", "-pointsize", str(font_size), "-gravity", "east", "-draw", f"text {'150,1800' if is_big else '100,1200'} '{label}'", BACK_TIF_PATH, BACK_TIF_PATH],
+            check=True,
+        )  # fmt:skip
+    except subprocess.CalledProcessError as e:
+        logger.error(e)
+        raise SystemError
 
-    # Set desktop background using ctypes
-    set_wallpaper(back_tif_path)
+    # Set wallpaper
+    set_wallpaper(BACK_TIF_PATH)
 
-    # Print to .log file
-    log_file_path = os.path.join(current_directory, ".log")
-    with open(log_file_path, "a") as log_file:
-        log_file.write(f"{now} - {text}\n")
+    logger.info(label)
 
-    # Remove downloaded moon file to avoid using up storage
+    # Clean up
     os.remove(im_path)
 
 
