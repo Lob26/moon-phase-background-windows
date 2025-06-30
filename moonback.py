@@ -5,10 +5,13 @@ import subprocess
 from ctypes import windll
 from datetime import datetime
 
-import requests
+import httpx
 
 logging.basicConfig(
-    filename=".log", level=logging.INFO, format="%(asctime)s - %(message)s"
+    force=True,
+    filename="mbg.log",
+    level=logging.DEBUG,
+    format="[%(levelname)s] %(asctime)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,7 @@ def set_wallpaper(file_path: str | os.PathLike[str]):
 
 
 def generate_wallpaper(is_big: bool = False):
+    logger.debug("Generating wallpaper")
     CURRENT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
     MAGICK_EXE = shutil.which("magick")
 
@@ -35,10 +39,15 @@ def generate_wallpaper(is_big: bool = False):
     # Get phase/illumination% from text file edited from "https://svs.gsfc.nasa.gov/vis/a000000/a005100/a005187/mooninfo_2024.txt"
     data_dir = os.path.join(CURRENT_DIRECTORY, "data")
 
+    if not os.path.exists(data_dir):
+        logger.error(f"Data directory does not exist: {data_dir}")
+        raise FileNotFoundError("Data directory does not exist")
+
     with (
         open(os.path.join(data_dir, "phase.txt")) as phase_file,
         open(os.path.join(data_dir, "age.txt")) as age_file,
     ):
+        logger.debug("Reading phase and age files")
         phase = phase_file.readlines()[num].strip()
         age = age_file.readlines()[num].strip()
 
@@ -57,11 +66,15 @@ def generate_wallpaper(is_big: bool = False):
         else f"{base_url}/3840x2160_16x9_30p/plain/{im}"
     )
 
-    response = requests.get(image_url, stream=True)
-    response.raise_for_status()
-    with open(im_path, "wb") as image_file:
-        shutil.copyfileobj(response.raw, image_file)
-    del response
+    with httpx.stream("GET", image_url) as response:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Failed to download image: {e}")
+            raise SystemError
+        with open(im_path, "wb") as image_file:
+            for chunk in response.iter_bytes():
+                image_file.write(chunk)
 
     # Replace original file with designated background file and add background and caption with ImageMagick
     try:
@@ -93,4 +106,5 @@ def generate_wallpaper(is_big: bool = False):
 
 
 if __name__ == "__main__":
+    logger.info("Starting moon phase background generation")
     generate_wallpaper()
