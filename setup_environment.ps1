@@ -21,6 +21,8 @@ param(
     # Not -Profile: $Profile is an automatic variable in Windows PowerShell.
     [ValidateSet('standard', 'large')] [string] $SizeProfile,
     [ValidateSet('report', 'quiet')]   [string] $OnError,
+    [ValidateSet('bottom-right', 'bottom-left', 'top-right', 'top-left')]
+    [string] $CaptionCorner,
     [string] $MagickPath,
     [string] $LocationName,
     [double] $Latitude,
@@ -208,6 +210,43 @@ $profileChoice = if ($SizeProfile) { $SizeProfile } else {
         )
 }
 
+# --------- Question: which corner for the text -------------------------
+# The taskbar is detected at run time and the text is pushed clear of it
+# automatically; this only picks which corner to start from.
+$taskbarEdge = 'unknown'
+try {
+    $abd = Add-Type -PassThru -Namespace MB -Name Bar -MemberDefinition @'
+[DllImport("shell32.dll")] public static extern IntPtr SHAppBarMessage(uint m, ref APPBARDATA d);
+[StructLayout(LayoutKind.Sequential)] public struct APPBARDATA {
+  public uint cbSize; public IntPtr hWnd; public uint uCallbackMessage;
+  public uint uEdge; public RECT rc; public IntPtr lParam; }
+[StructLayout(LayoutKind.Sequential)] public struct RECT {
+  public int left, top, right, bottom; }
+'@ -ErrorAction Stop
+    $d = New-Object MB.Bar+APPBARDATA
+    $d.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($d)
+    if ([MB.Bar]::SHAppBarMessage(5, [ref] $d) -ne [IntPtr]::Zero) {
+        $taskbarEdge = @('left', 'top', 'right', 'bottom')[$d.uEdge]
+        $thick = if ($taskbarEdge -in 'top', 'bottom') { $d.rc.bottom - $d.rc.top }
+                 else { $d.rc.right - $d.rc.left }
+        Write-Host "Taskbar detected on the $taskbarEdge, $thick px thick." -ForegroundColor DarkGray
+    }
+} catch {
+    Write-Host "Could not read the taskbar position; the text will use plain margins." -ForegroundColor DarkGray
+}
+
+$cornerChoice = if ($CaptionCorner) { $CaptionCorner } else {
+    Read-Choice -Question "Which corner should the text sit in?" `
+        -Detail "Whichever you pick, it is pushed clear of the taskbar automatically." `
+        -Default (Get-OrDefault $existing['caption_corner'] 'bottom-right') `
+        -Options @(
+            @{ Value = 'bottom-right'; Label = 'Bottom right'; Help = 'The classic spot, and where desktop icons usually are not.' }
+            @{ Value = 'bottom-left';  Label = 'Bottom left';  Help = 'Good if your taskbar is docked on the right.' }
+            @{ Value = 'top-right';    Label = 'Top right';    Help = 'Clear of a bottom taskbar entirely.' }
+            @{ Value = 'top-left';     Label = 'Top left';     Help = 'Usually where desktop icons live - they may overlap.' }
+        )
+}
+
 # --------- Question: where you are (for eclipse visibility) ------------
 # NASA's frames never show an eclipse, so the caption is the only signal.
 # Knowing where you are turns "there is an eclipse" into "you can see it".
@@ -251,9 +290,10 @@ $lines = @(
     "# Written by setup_environment.ps1. Re-run it to change these answers,",
     "# or edit by hand. Environment variables (MOONBACK_*) override anything here.",
     "",
-    ("profile  = `"{0}`"" -f $profileChoice),
-    ("on_error = `"{0}`"" -f $onErrorChoice),
-    ("magick   = `"{0}`"" -f $magick.Replace('\', '\\'))
+    ("profile        = `"{0}`"" -f $profileChoice),
+    ("on_error       = `"{0}`"" -f $onErrorChoice),
+    ("caption_corner = `"{0}`"" -f $cornerChoice),
+    ("magick         = `"{0}`"" -f $magick.Replace('\', '\\'))
 )
 if ($place) {
     $lines += @(

@@ -23,7 +23,7 @@ from .moondata import (
 from .nasa import DownloadError, download
 from .visibility import altitude_degrees
 from .visibility import describe as describe_visibility
-from .wallpaper import RenderError, compose, set_wallpaper
+from .wallpaper import RenderError, compose, resolve_placement, set_wallpaper
 
 logger = logging.getLogger("moonback")
 
@@ -136,6 +136,8 @@ def run(config: Config, now: datetime | None = None) -> str:
         caption = format_caption(hour, note)
         headline = visibility_headline(config, hour, now) if note else None
 
+        placement = resolve_placement(config.profile, config.caption_corner)
+
         filename = frame_filename(index)
         frame = config.home / filename
         try:
@@ -153,6 +155,7 @@ def run(config: Config, now: datetime | None = None) -> str:
                 caption=caption,
                 profile=config.profile,
                 destination=config.output_path,
+                placement=placement,
                 headline=headline,
             )
         finally:

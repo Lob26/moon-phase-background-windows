@@ -115,6 +115,11 @@ Four decisions worth naming:
   computed from the RA and Dec already in the ephemeris — see
   [Will you actually see it?](#will-you-actually-see-it) below.
 
+**The disc stays grey, and that is deliberate.** NASA's render models phase and
+libration, not Earth's shadow, so it never turns red. Tinting it ourselves would
+mean shipping invented imagery under NASA's name, which is not a trade worth
+making for a prettier screenshot. The text says what the picture cannot.
+
 One wrinkle worth recording: NASA's own table prints `2038 Dec 11 17:44:60` —
 a rounding artefact that is not a valid time. The scraper normalises it by
 adding the seconds as a delta; the parser stays strict, so the data file is the
@@ -152,6 +157,30 @@ Two honest limitations, both deliberate:
 The whole thing is validated against an oracle it cannot influence: for seven
 cities across four continents, "is the Moon up" must agree with NASA's
 independently published region list for that eclipse. It does.
+
+### The caption asks Windows where the taskbar is
+
+The original put the caption at a fixed offset that happened to clear a bottom
+taskbar. On the machine this was developed on — 1440×900, 96 px taskbar — it
+cleared by about 37 pixels. It was not broken; it was lucky. A thicker taskbar,
+a side-docked one, or a taller screen aspect eats that margin, and nothing was
+maintaining it.
+
+So each run asks Windows via `SHAppBarMessage(ABM_GETTASKBARPOS)` which edge the
+taskbar is docked to and how thick it is, and pushes the caption clear. Queried
+per run, not at install time, because taskbars get moved and monitors get
+plugged in.
+
+The conversion is the only subtle part. The canvas is 3:2 and most screens are
+not, so Windows "Fill" crops the top and bottom before displaying it — which
+means screen pixels map to canvas pixels by the **width** ratio, the one Fill
+preserves. Only a taskbar on one of the chosen corner's *own* edges can cover
+the caption, so a bottom taskbar never shifts a top-corner caption sideways.
+
+Which corner is a question at install time, because it is taste, not geometry.
+The taskbar allowance then applies to whichever you picked. All of it is pure
+arithmetic in [`layout.py`](moonback/layout.py); the one `ctypes` call lives in
+`wallpaper.py` and degrades to plain margins if it fails.
 
 ### Every external call gets a timeout and a bounded retry
 
@@ -321,7 +350,7 @@ to Meeus's worked examples.
 
 ```
 $ uv run pytest
-162 passed in 1.38s
+188 passed in 1.22s
 ```
 
 Pure logic is a separate module precisely so all of this needs no network, no
@@ -363,11 +392,12 @@ moonback/
   moondata.py   pure: parse the ephemeris, map "now" to a frame   <- the interesting part
   eclipses.py   pure: parse the eclipse catalogue, describe the hour
   visibility.py pure: is the Moon above your horizon right now
+  layout.py     pure: which corner the caption goes in, clear of the taskbar
   config.py     moonback.toml + env -> validated Config; fails before doing work
   nasa.py       download with timeout, bounded retry, atomic rename
   wallpaper.py  one magick pass; SystemParametersInfoW
   __main__.py   orchestration and exit codes
-tests/          162 tests, no network, no ImageMagick, no Windows
+tests/          188 tests, no network, no ImageMagick, no Windows
 data/           NASA mooninfo_<year>.txt (cached) and lunar_eclipses.txt
 scripts/        one-off scrapers: eclipse catalogue, yearly rollover
 .github/        the January rollover PR

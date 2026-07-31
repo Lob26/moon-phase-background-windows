@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .layout import CORNERS
 from .visibility import Observer
 
 #: Written by setup_environment.ps1 from the answers given at install time.
@@ -44,25 +45,33 @@ class RenderProfile:
 
     name: str
     canvas: str
+    canvas_width: int
+    canvas_height: int
     frame_resolution: str
     point_size: int
-    caption_offset: tuple[int, int]
+    caption_margin: tuple[int, int]
+    """Inset from whichever corner the caption is placed in, in canvas pixels."""
 
 
 PROFILES: dict[str, RenderProfile] = {
     "standard": RenderProfile(
         name="standard",
         canvas="best_small.tif",
+        canvas_width=5461,
+        canvas_height=3640,
         frame_resolution="3840x2160_16x9_30p",
         point_size=50,
-        caption_offset=(100, 1200),
+        # 620 from the bottom reproduces the original east/+1200 placement.
+        caption_margin=(100, 620),
     ),
     "large": RenderProfile(
         name="large",
         canvas="best.tif",
+        canvas_width=8192,
+        canvas_height=5461,
         frame_resolution="5760x3240_16x9_30p",
         point_size=80,
-        caption_offset=(150, 1800),
+        caption_margin=(150, 930),
     ),
 }
 
@@ -93,6 +102,7 @@ class Config:
     log_file: Path
     on_error: str = OnError.REPORT
     observer: Observer | None = None
+    caption_corner: str = "bottom-right"
 
     @property
     def ephemeris_path(self) -> Path:
@@ -256,6 +266,17 @@ def load_config(now: datetime | None = None) -> Config:
             f"(in {SETTINGS_FILENAME} or MOONBACK_ON_ERROR)"
         )
 
+    corner = (
+        str(_setting(settings, "MOONBACK_CAPTION_CORNER", "caption_corner") or "bottom-right")
+        .strip()
+        .lower()
+    )
+    if corner not in CORNERS:
+        raise ConfigError(
+            f"caption_corner {corner!r} is not known; choose one of {', '.join(CORNERS)} "
+            f"(in {SETTINGS_FILENAME} or MOONBACK_CAPTION_CORNER)"
+        )
+
     year = _as_int(
         _setting(settings, "MOONBACK_YEAR", "year"),
         "year",
@@ -288,6 +309,7 @@ def load_config(now: datetime | None = None) -> Config:
         log_file=Path(os.environ.get("MOONBACK_LOG_FILE", home / "mbg.log")),
         on_error=on_error,
         observer=_read_observer(settings),
+        caption_corner=corner,
     )
 
     # The ephemeris is deliberately NOT checked here: it is a cache, fetched on

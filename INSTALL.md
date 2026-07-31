@@ -47,12 +47,13 @@ The installer detects ImageMagick, asks three questions, writes your answers to
 `moonback.toml`, registers an hourly **MoonlightSonata** task starting at the
 next whole hour, and runs it once so you see the result immediately.
 
-The three questions:
+The questions:
 
 | Question | Why it is asked |
 |---|---|
 | What should happen when an hourly update fails? | `report` surfaces failures in Task Scheduler's *Last Run Result*; `quiet` keeps the previous wallpaper and stays silent. Either way it is logged. |
 | Which wallpaper size? | `standard` (~4 MB/hour) or `large` (~9 MB/hour). |
+| Which corner should the text sit in? | Taste. Whichever you pick, it is pushed clear of the detected taskbar automatically. |
 | Where are you? | Only used to decide whether a lunar eclipse is above your horizon. Skippable. |
 
 Re-run it any time to change your answers — your current ones become the
@@ -72,6 +73,7 @@ Every question has a flag, so reinstalls and CI need no human:
 .\setup_environment.ps1 -Unattended
 .\setup_environment.ps1 -Unattended -SizeProfile large -OnError quiet `
     -LocationName "Bogota" -Latitude 4.71 -Longitude -74.07
+.\setup_environment.ps1 -Unattended -CaptionCorner top-right
 .\setup_environment.ps1 -Unattended -NoLocation
 ```
 
@@ -92,6 +94,7 @@ re-run setup. It is gitignored — the paths and coordinates in it are yours.
 ```toml
 profile  = "standard"     # or "large"
 on_error = "report"       # or "quiet"
+caption_corner = "bottom-right"
 magick   = "C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe"
 
 # Delete this section to turn eclipse visibility off.
@@ -105,6 +108,7 @@ longitude = -74.07
 |---|---|---|---|
 | `magick` | `MOONBACK_MAGICK` | `magick` on PATH | Command name or full path to `magick.exe` |
 | `profile` | `MOONBACK_PROFILE` | `standard` | `standard` (5461×3640) or `large` (8192×5461) |
+| `caption_corner` | `MOONBACK_CAPTION_CORNER` | `bottom-right` | `bottom-right`, `bottom-left`, `top-right` or `top-left`; the taskbar allowance applies to whichever you pick |
 | `on_error` | `MOONBACK_ON_ERROR` | `report` | `report` exits non-zero on failure; `quiet` keeps the last wallpaper and exits 0 |
 | `year` | `MOONBACK_YEAR` | current UTC year | Override the ephemeris year; mostly for testing |
 | `connect_timeout` | `MOONBACK_CONNECT_TIMEOUT` | `10` | Seconds to connect to NASA |
