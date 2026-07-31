@@ -1,0 +1,5 @@
+# Task Scheduler requires UTF-16; any EOL or encoding normalisation corrupts it.
+wtask.template.xml -text
+
+# Keep the ephemeris and eclipse tables byte-identical to what NASA published.
+data/mooninfo_*.txt -text

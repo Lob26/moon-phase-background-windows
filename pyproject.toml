@@ -1,0 +1,45 @@
+[project]
+name = "moonback"
+version = "2.0.0"
+description = "Set the Windows desktop wallpaper to the current hour's NASA moon frame"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Pedro Lobato" }]
+dependencies = ["httpx>=0.28,<0.29"]
+
+[project.scripts]
+moonback = "moonback.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/pedrolobato/moon-phase-background-windows"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["moonback"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
+
+[tool.ruff.lint.pylint]
+# download_frame and compose take injectable collaborators (sleep, jitter,
+# profile) as keyword-only arguments; five is too tight for that shape.
+max-args = 8
+
+[tool.ruff.lint.per-file-ignores]
+# Asserting on literal counts is the point of a test, not a magic number.
+"tests/**" = ["PLR2004"]

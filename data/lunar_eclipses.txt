@@ -1,0 +1,60 @@
+# Lunar eclipses, 2021-2040.
+#
+# Source: NASA/GSFC, Five Millennium Canon of Lunar Eclipses (Fred Espenak).
+#   https://eclipse.gsfc.nasa.gov/LEdecade/LEdecade2021.html
+#   https://eclipse.gsfc.nasa.gov/LEdecade/LEdecade2031.html
+# Regenerate with: uv run python scripts/fetch_eclipses.py
+#
+# Times are greatest eclipse in TD. TD - UT is about 70 s this century, three
+# orders of magnitude below the one-hour resolution this tool works at.
+#
+# Durations are minutes. "umbral" is the partial phase (first to last umbral
+# contact) and is 0 for penumbral eclipses, whose duration the decade tables
+# do not publish. "totality" is 0 unless the eclipse is total.
+#
+# greatest_td         type        umbral  totality
+2021-05-26T11:19:53   total       187     15
+2021-11-19T09:04:06   partial     208     0
+2022-05-16T04:12:42   total       207     85
+2022-11-08T11:00:22   total       220     85
+2023-05-05T17:24:05   penumbral   0       0
+2023-10-28T20:15:18   partial     77      0
+2024-03-25T07:13:59   penumbral   0       0
+2024-09-18T02:45:25   partial     63      0
+2025-03-14T06:59:56   total       218     65
+2025-09-07T18:12:58   total       209     82
+2026-03-03T11:34:52   total       207     58
+2026-08-28T04:14:04   partial     198     0
+2027-02-20T23:14:06   penumbral   0       0
+2027-07-18T16:04:09   penumbral   0       0
+2027-08-17T07:14:59   penumbral   0       0
+2028-01-12T04:14:13   partial     56      0
+2028-07-06T18:20:57   partial     141     0
+2028-12-31T16:53:15   total       209     71
+2029-06-26T03:23:22   total       220     102
+2029-12-20T22:43:12   total       213     54
+2030-06-15T18:34:34   partial     144     0
+2030-12-09T22:28:51   penumbral   0       0
+2031-05-07T03:52:02   penumbral   0       0
+2031-06-05T11:45:17   penumbral   0       0
+2031-10-30T07:46:45   penumbral   0       0
+2032-04-25T15:14:51   total       211     66
+2032-10-18T19:03:40   total       196     47
+2033-04-14T19:13:51   total       215     49
+2033-10-08T10:56:23   total       202     79
+2034-04-03T19:06:59   penumbral   0       0
+2034-09-28T02:47:37   partial     27      0
+2035-02-22T09:06:12   penumbral   0       0
+2035-08-19T01:12:15   partial     77      0
+2036-02-11T22:13:06   total       202     74
+2036-08-07T02:52:32   total       231     95
+2037-01-31T14:01:38   total       197     64
+2037-07-27T04:09:53   partial     192     0
+2038-01-21T03:49:52   penumbral   0       0
+2038-06-17T02:45:02   penumbral   0       0
+2038-07-16T11:35:56   penumbral   0       0
+2038-12-11T17:45:00   penumbral   0       0
+2039-06-06T18:54:25   partial     179     0
+2039-11-30T16:56:28   partial     206     0
+2040-05-26T11:46:22   total       211     92
+2040-11-18T19:04:41   total       220     88

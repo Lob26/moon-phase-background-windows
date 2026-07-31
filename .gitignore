@@ -1,2 +1,20 @@
 *.log
+
+# Generated wallpaper and the per-hour NASA frames. back.tif is rewritten every
+# run; see README.md ("The 57 MB elephant") for why it should not be tracked.
+back.tif
+moon.*.tif
+*.part
+samples/
+
+# Written by setup_environment.ps1 from your install-time answers: local to
+# this machine (paths, coordinates), so it is not shared.
+moonback.toml
+
+# uv / Python
+.venv/
 pyscript/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
