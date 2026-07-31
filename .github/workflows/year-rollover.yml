@@ -1,0 +1,77 @@
+name: Year rollover
+
+# NASA publishes each year's Moon Phase and Libration visualisation under a new
+# SVS id, so this project has a hard annual expiry. This finds the new id and
+# opens a PR; a scraped id is a guess, and the PR is the human checkpoint it
+# deserves. Nothing lands on main automatically.
+#
+# Runs on 5 January to give NASA a few days to publish. If the entry is not up
+# yet the job fails loudly and the manual path in INSTALL.md still works.
+
+on:
+  schedule:
+    - cron: "0 0 5 1 *"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Year to roll over to (defaults to the current year)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rollover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Fails the job if NASA has not published the year yet -- that is worth a
+      # notification, since the manual path in INSTALL.md is then needed.
+      - name: Discover this year's SVS collection
+        id: discover
+        run: uv run python scripts/rollover_year.py ${{ inputs.year }}
+
+      - name: Verify the new year end to end
+        if: steps.discover.outputs.changed == 'true'
+        run: uv run pytest
+
+      - name: Open a pull request
+        if: steps.discover.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YEAR: ${{ steps.discover.outputs.year }}
+          COLLECTION: ${{ steps.discover.outputs.collection }}
+        run: |
+          set -euo pipefail
+          branch="chore/svs-$YEAR"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add moonback/config.py "data/mooninfo_$YEAR.txt"
+          git commit -m "chore(config): mapea la visualizacion SVS $COLLECTION para $YEAR"
+          git push --force-with-lease origin "$branch"
+
+          gh pr create \
+            --title "chore(config): SVS $COLLECTION para $YEAR" \
+            --body "$(cat <<EOF
+          Automated yearly rollover.
+
+          - Gallery entry: **Moon Phase and Libration, $YEAR** -> SVS id \`$COLLECTION\`
+          - Verified that \`moon.0001.tif\` and \`mooninfo_$YEAR.txt\` both return 200 under that id
+          - Cached \`data/mooninfo_$YEAR.txt\`
+          - \`uv run pytest\` passed on this branch
+
+          **Please confirm the id against the [SVS gallery](https://svs.gsfc.nasa.gov/gallery/moonphase/) before merging.**
+          The id is scraped from link text, so a gallery redesign could produce a
+          plausible-but-wrong number. The checks above catch a *dead* id, not a
+          *wrong-but-live* one.
+          EOF
+          )"
