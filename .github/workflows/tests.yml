@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv run ruff check --no-fix .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Balanced by .test_durations, which is committed. Regenerate it with
+        # `uv run pytest --store-durations` when the suite grows lopsided.
+        group: [1, 2, 3]
+    name: test (group ${{ matrix.group }}/3)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # The suite is pure: no network, no ImageMagick, no Windows. That is why
+      # this runs on ubuntu and needs no services.
+      - run: uv run pytest --splits 3 --group ${{ matrix.group }}
+
+  # A green matrix is what branch protection should require, but each shard is
+  # a separate check. This one job stands in for all of them.
+  tests-passed:
+    if: always()
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any shard failed
+        run: |
+          [ "${{ needs.lint.result }}" = "success" ] || exit 1
+          [ "${{ needs.test.result }}" = "success" ] || exit 1
