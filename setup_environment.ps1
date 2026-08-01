@@ -23,6 +23,7 @@ param(
     [ValidateSet('report', 'quiet')]   [string] $OnError,
     [ValidateSet('bottom-right', 'bottom-left', 'top-right', 'top-left')]
     [string] $CaptionCorner,
+    [bool] $EclipseImagery,
     [string] $MagickPath,
     [string] $LocationName,
     [double] $Latitude,
@@ -247,6 +248,28 @@ $cornerChoice = if ($CaptionCorner) { $CaptionCorner } else {
         )
 }
 
+# --------- Question: eclipse imagery -----------------------------------
+# The year-long Dial-A-Moon render models phase and libration only, so it
+# stays grey through totality. NASA publishes a separate telescopic sequence
+# for major eclipses that does show the red Moon - real imagery, not synthetic.
+$eclipseImagery = if ($PSBoundParameters.ContainsKey('EclipseImagery')) {
+    if ($EclipseImagery) { 'true' } else { 'false' }
+} else {
+    Read-Choice -Question "During a lunar eclipse, show NASA's eclipse imagery?" `
+        -Detail ("The picture used the rest of the year models the Moon's phase, not Earth's`n" +
+                 "shadow, so it stays grey right through totality. NASA renders a separate`n" +
+                 "telescopic sequence for major eclipses that shows the real coppery-red Moon.") `
+        -Default (Get-OrDefault $existing['eclipse_imagery'] 'true') `
+        -Options @(
+            @{ Value = 'true'
+               Label = 'Yes - show the eclipse as it looks'
+               Help  = 'Swaps in NASA''s telescopic render for those few hours. Still NASA imagery, nothing invented. Only exists for major eclipses; the rest fall back automatically.' }
+            @{ Value = 'false'
+               Label = 'No - keep the same view all year'
+               Help  = 'Every hour comes from one consistent sequence. Eclipses are still named in the caption, the Moon just stays grey.' }
+        )
+}
+
 # --------- Question: where you are (for eclipse visibility) ------------
 # NASA's frames never show an eclipse, so the caption is the only signal.
 # Knowing where you are turns "there is an eclipse" into "you can see it".
@@ -293,6 +316,7 @@ $lines = @(
     ("profile        = `"{0}`"" -f $profileChoice),
     ("on_error       = `"{0}`"" -f $onErrorChoice),
     ("caption_corner = `"{0}`"" -f $cornerChoice),
+    ("eclipse_imagery = {0}"    -f $eclipseImagery),
     ("magick         = `"{0}`"" -f $magick.Replace('\', '\\'))
 )
 if ($place) {
