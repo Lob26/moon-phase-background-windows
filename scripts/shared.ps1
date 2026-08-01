@@ -41,6 +41,25 @@ function Get-OrDefault {
     return $Value
 }
 
+function Format-Row {
+    <#  Pad AND truncate a line to the console width.
+
+        Truncating is the part that matters. A line longer than the window
+        wraps onto a second row, so a menu block becomes taller than the number
+        of lines the repaint rewinds -- and the menu walks down the screen, one
+        row per keypress. Padding alone only fixes the opposite problem, of a
+        short line failing to overwrite a longer one underneath it.  #>
+    param([string] $Text, [int] $Width = 0)
+
+    if ($Width -le 0) {
+        $Width = try { $Host.UI.RawUI.WindowSize.Width - 1 } catch { 80 }
+    }
+    $Width = [Math]::Max(20, $Width)
+
+    if ($Text.Length -gt $Width) { return $Text.Substring(0, $Width - 3) + '...' }
+    return $Text.PadRight($Width)
+}
+
 function Test-ArrowKeysUsable {
     <#  Can we read individual keypresses and repaint?
 
@@ -96,67 +115,61 @@ function Read-Choice {
     }
 
     # --- Arrow-key menu ---
-    # Each option occupies two lines (label + help) so the repaint can rewrite
-    # exactly the block it drew, without clearing the question above it.
-    $lineCount = $Options.Count * 2 + 1
-
-    # Reserve the block by printing it blank first. If the menu would run past
-    # the bottom of the window the console scrolls now, before we anchor -- an
-    # anchor captured before a scroll points at the wrong row afterwards, and
-    # the repaint walks up the screen.
-    1..$lineCount | ForEach-Object { Write-Host '' }
-    $top = $Host.UI.RawUI.CursorPosition
-    $top.X = 0
-    $top.Y = [Math]::Max(0, $top.Y - $lineCount)
+    # One line per option plus a help line for the selected one and a hint.
+    # Help used to be printed under every option, which made the block twice as
+    # tall for no gain -- only the selected option's help is worth reading.
+    $lineCount = $Options.Count + 3
 
     function Write-Menu {
         param([int] $Selected)
-        $Host.UI.RawUI.CursorPosition = $top
         for ($i = 0; $i -lt $Options.Count; $i++) {
             $on = ($i -eq $Selected)
-            $arrow  = if ($on) { '>' } else { ' ' }
-            $colour = if ($on) { 'Black' } else { 'Cyan' }
-            $line   = ("  {0} {1}) {2}" -f $arrow, ($i + 1), $Options[$i].Label)
-            # Pad to the window width so a shorter line fully overwrites a longer one.
-            $line = $line.PadRight($Host.UI.RawUI.WindowSize.Width - 1)
-            if ($on) { Write-Host $line -ForegroundColor $colour -BackgroundColor Cyan }
-            else     { Write-Host $line -ForegroundColor $colour }
-
-            $help = if ($Options[$i].Help) { "       " + $Options[$i].Help } else { '' }
-            Write-Host $help.PadRight($Host.UI.RawUI.WindowSize.Width - 1) -ForegroundColor DarkGray
+            $row = Format-Row ("  {0} {1}) {2}" -f $(if ($on) { '>' } else { ' ' }), ($i + 1), $Options[$i].Label)
+            if ($on) { Write-Host $row -ForegroundColor Black -BackgroundColor Cyan }
+            else     { Write-Host $row -ForegroundColor Cyan }
         }
-        Write-Host "  Up/Down to move, Enter to choose, or press a number.".PadRight($Host.UI.RawUI.WindowSize.Width - 1) -ForegroundColor DarkGray
+        Write-Host (Format-Row '')
+        Write-Host (Format-Row ("   " + $Options[$Selected].Help)) -ForegroundColor DarkGray
+        Write-Host (Format-Row "   Up/Down to move, Enter to choose, or press a number.") -ForegroundColor DarkGray
     }
 
     try { [Console]::CursorVisible = $false } catch { }
     try {
+        Write-Menu -Selected $index
         while ($true) {
-            Write-Menu -Selected $index
             $key = [Console]::ReadKey($true)
 
+            $chosen = $false
             switch ($key.Key) {
                 'UpArrow'   { $index = ($index - 1 + $Options.Count) % $Options.Count }
                 'DownArrow' { $index = ($index + 1) % $Options.Count }
-                'Enter'     { return $Options[$index].Value }
+                'Enter'     { $chosen = $true }
                 default {
                     # Digits pick directly, which keeps the old muscle memory.
                     $digit = 0
                     if ([int]::TryParse($key.KeyChar, [ref] $digit) -and
                         $digit -ge 1 -and $digit -le $Options.Count) {
                         $index = $digit - 1
-                        Write-Menu -Selected $index
-                        return $Options[$index].Value
+                        $chosen = $true
                     }
                 }
             }
+
+            # Rewind over the block just drawn and repaint it in place. The
+            # anchor is measured from where the previous draw *finished*, not
+            # from a position captured before it: if the console scrolled
+            # mid-draw an earlier anchor is already stale, and measuring
+            # afterwards is self-correcting.
+            $spot = $Host.UI.RawUI.CursorPosition
+            $spot.X = 0
+            $spot.Y = [Math]::Max(0, $spot.Y - $lineCount)
+            $Host.UI.RawUI.CursorPosition = $spot
+            Write-Menu -Selected $index
+
+            if ($chosen) { return $Options[$index].Value }
         }
     } finally {
         try { [Console]::CursorVisible = $true } catch { }
-        # Leave the cursor below the menu so later output does not overwrite it.
-        $end = $Host.UI.RawUI.CursorPosition
-        $end.Y = $top.Y + $lineCount
-        $end.X = 0
-        try { $Host.UI.RawUI.CursorPosition = $end } catch { }
         Write-Host
     }
 }
