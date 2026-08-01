@@ -13,6 +13,7 @@
         .\setup_environment.ps1 -Unattended
         .\setup_environment.ps1 -Unattended -SizeProfile large -OnError quiet `
             -LocationName Bogota -Latitude 4.71 -Longitude -74.07
+        .\setup_environment.ps1 -Unattended -NoEclipseImagery -NoLocation
 #>
 
 [CmdletBinding()]
@@ -23,7 +24,9 @@ param(
     [ValidateSet('report', 'quiet')]   [string] $OnError,
     [ValidateSet('bottom-right', 'bottom-left', 'top-right', 'top-left')]
     [string] $CaptionCorner,
-    [bool] $EclipseImagery,
+    # Negative switch, like -NoLocation: [bool] parameters bind awkwardly in
+    # PowerShell and read badly at a call site.
+    [switch] $NoEclipseImagery,
     [string] $MagickPath,
     [string] $LocationName,
     [double] $Latitude,
@@ -52,76 +55,8 @@ $taskName     = 'MoonlightSonata'
 $settingsPath = Join-Path $repo 'moonback.toml'
 
 # --------- Helpers ----------------------------------------------------
-function Get-OrDefault {
-    # Windows PowerShell 5.1 has no ?? operator.
-    param($Value, $Fallback)
-    if ([string]::IsNullOrWhiteSpace([string] $Value)) { return $Fallback }
-    return $Value
-}
-
-function Read-Choice {
-    <#  A numbered menu. Returns the chosen value.
-        $Options is an array of hashtables: @{ Value; Label; Help }  #>
-    param(
-        [string] $Question,
-        [string] $Detail,
-        [array]  $Options,
-        [string] $Default
-    )
-
-    $defaultIndex = [Math]::Max(0, [Array]::IndexOf(($Options | ForEach-Object { $_.Value }), $Default))
-
-    if ($script:NonInteractive) { return $Options[$defaultIndex].Value }
-
-    Write-Host
-    Write-Host $Question -ForegroundColor White
-    if ($Detail) { Write-Host $Detail -ForegroundColor DarkGray }
-    Write-Host
-
-    for ($i = 0; $i -lt $Options.Count; $i++) {
-        $marker = if ($i -eq $defaultIndex) { '*' } else { ' ' }
-        Write-Host ("  {0}{1}) {2}" -f $marker, ($i + 1), $Options[$i].Label) -ForegroundColor Cyan
-        if ($Options[$i].Help) {
-            Write-Host ("       {0}" -f $Options[$i].Help) -ForegroundColor DarkGray
-        }
-    }
-    Write-Host
-
-    while ($true) {
-        $answer = Read-Host ("Choose 1-{0} [default {1}]" -f $Options.Count, ($defaultIndex + 1))
-        if ([string]::IsNullOrWhiteSpace($answer)) { return $Options[$defaultIndex].Value }
-        $parsed = 0
-        if ([int]::TryParse($answer, [ref] $parsed) -and $parsed -ge 1 -and $parsed -le $Options.Count) {
-            return $Options[$parsed - 1].Value
-        }
-        Write-Host "  Please enter a number between 1 and $($Options.Count)." -ForegroundColor Yellow
-    }
-}
-
-function Read-Text {
-    param([string] $Question, [string] $Default)
-    if ($script:NonInteractive) { return $Default }
-    $suffix = if ($Default) { " [$Default]" } else { '' }
-    $answer = Read-Host ("{0}{1}" -f $Question, $suffix)
-    if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
-    return $answer.Trim()
-}
-
-function Read-Number {
-    param([string] $Question, [double] $Default, [double] $Min, [double] $Max)
-    while ($true) {
-        $answer = Read-Text -Question $Question -Default ([string] $Default)
-        $parsed = 0.0
-        if ([double]::TryParse($answer, [Globalization.NumberStyles]::Float,
-                               [Globalization.CultureInfo]::InvariantCulture, [ref] $parsed)) {
-            if ($parsed -ge $Min -and $parsed -le $Max) { return $parsed }
-            Write-Host "  Must be between $Min and $Max." -ForegroundColor Yellow
-        } else {
-            Write-Host "  That is not a number. Use a decimal point, e.g. 4.71" -ForegroundColor Yellow
-        }
-        if ($script:NonInteractive) { throw "Invalid default for '$Question'" }
-    }
-}
+# Shared with uninstall.ps1 so the two scripts cannot drift apart.
+. "$PSScriptRoot\scripts\shared.ps1"
 
 function Read-ExistingSettings {
     <#  Previous answers become this run's defaults. A deliberately small
@@ -252,9 +187,7 @@ $cornerChoice = if ($CaptionCorner) { $CaptionCorner } else {
 # The year-long Dial-A-Moon render models phase and libration only, so it
 # stays grey through totality. NASA publishes a separate telescopic sequence
 # for major eclipses that does show the red Moon - real imagery, not synthetic.
-$eclipseImagery = if ($PSBoundParameters.ContainsKey('EclipseImagery')) {
-    if ($EclipseImagery) { 'true' } else { 'false' }
-} else {
+$eclipseImagery = if ($NoEclipseImagery) { 'false' } else {
     Read-Choice -Question "During a lunar eclipse, show NASA's eclipse imagery?" `
         -Detail ("The picture used the rest of the year models the Moon's phase, not Earth's`n" +
                  "shadow, so it stays grey right through totality. NASA renders a separate`n" +
@@ -337,7 +270,7 @@ Write-Host
 Write-Host "Wrote $settingsPath" -ForegroundColor Green
 
 # --------- Dependencies -------------------------------------------------
-& uv sync --project $repo
+Invoke-Native { uv sync --project $repo } 'uv sync'
 Write-Host "Dependencies installed" -ForegroundColor Green
 
 $pythonw = Join-Path $repo '.venv\Scripts\pythonw.exe'
@@ -366,18 +299,19 @@ try {
     # Not registered yet - the normal path on a first install.
 }
 
-schtasks /create /tn $taskName /xml "$xmlTemp" /f
-if ($LASTEXITCODE -ne 0) { throw "schtasks failed to register $taskName" }
+Invoke-Native { schtasks /create /tn $taskName /xml "$xmlTemp" /f } "registering $taskName"
 Write-Host "Task '$taskName' registered, first run at $start" -ForegroundColor Green
 
 Remove-Item $xmlTemp -Force
 
 # --------- Run once now --------------------------------------------------
 Write-Host "Running once now..." -ForegroundColor Cyan
-& uv run --project $repo moonback
-if ($LASTEXITCODE -ne 0) {
+try {
+    Invoke-Native { uv run --project $repo moonback } 'the first run'
+} catch {
     Write-Host "The first run failed - see $repo\mbg.log" -ForegroundColor Red
-    exit $LASTEXITCODE
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host
