@@ -34,6 +34,7 @@ class TestParseMooninfo:
             at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
             illumination_pct=91.40,
             cycle_age_days=11.928,
+            distance_km=361045.0,
             right_ascension_hours=4.2348,
             declination_degrees=26.3373,
         )

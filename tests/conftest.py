@@ -15,12 +15,14 @@ def make_hour(
     *,
     ra: float = 12.0,
     dec: float = 0.0,
+    distance_km: float = 384_400.0,
 ) -> MoonHour:
     """A MoonHour for tests that only care about some of its fields."""
     return MoonHour(
         at=at,
         illumination_pct=illumination_pct,
         cycle_age_days=cycle_age_days,
+        distance_km=distance_km,
         right_ascension_hours=ra,
         declination_degrees=dec,
     )
@@ -38,6 +40,7 @@ _GROUPS = {
     "test_settings_file": "plumbing",
     "test_ephemeris_cache": "plumbing",
     "test_layout": "rendering",
+    "test_events": "astronomy",
 }
 
 

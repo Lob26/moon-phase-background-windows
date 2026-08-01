@@ -52,6 +52,9 @@ class MoonHour:
     cycle_age_days: float
     """Days elapsed since the last new moon."""
 
+    distance_km: float
+    """Centre-to-centre distance to the Moon."""
+
     right_ascension_hours: float
     """Geocentric apparent right ascension, in hours (0-24)."""
 
@@ -64,9 +67,14 @@ class MoonHour:
         return f"Phase: {self.illumination_pct:.2f}% Days: {self.cycle_age_days:.3f}"
 
 
-def format_caption(hour: MoonHour, note: str | None = None) -> str:
-    """The full caption drawn onto the wallpaper, with an optional extra clause."""
-    return f"{hour.label} - {note}" if note else hour.label
+def format_caption(hour: MoonHour, *notes: str | None) -> str:
+    """The caption drawn onto the wallpaper, plus any extra clauses.
+
+    Takes several because a night can be more than one thing at once: the full
+    moon of 2026-05-31 is both a micromoon and a blue moon, and an eclipse can
+    coincide with a supermoon.
+    """
+    return " - ".join([hour.label, *(note for note in notes if note)])
 
 
 def parse_mooninfo(text: str) -> tuple[MoonHour, ...]:
@@ -96,6 +104,7 @@ def parse_mooninfo(text: str) -> tuple[MoonHour, ...]:
                 ),
                 illumination_pct=float(fields["phase"]),
                 cycle_age_days=float(fields["age"]),
+                distance_km=float(fields["distance"]),
                 right_ascension_hours=float(fields["ra"]),
                 declination_degrees=float(fields["dec"]),
             )

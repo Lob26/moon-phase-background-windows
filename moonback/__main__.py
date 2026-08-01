@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from . import __version__
 from .config import Config, ConfigError, OnError, load_config
 from .eclipse_views import EclipseViewError, parse_eclipse_views, view_at
 from .eclipses import EclipseError, describe_at, parse_eclipses
+from .events import describe_at as describe_events
 from .moondata import (
     MoonDataError,
     MoonHour,
@@ -157,9 +158,20 @@ def ensure_ephemeris(client: httpx.Client, config: Config) -> Path:
     )
 
 
-def run(config: Config, now: datetime | None = None) -> str:
-    """Do one wallpaper update and return the caption that was drawn."""
+def run(
+    config: Config,
+    now: datetime | None = None,
+    *,
+    destination: Path | None = None,
+    apply: bool = True,
+) -> str:
+    """Do one wallpaper update and return the caption that was drawn.
+
+    ``destination`` and ``apply`` exist for --at, which renders a chosen moment
+    to a file without touching the desktop.
+    """
     now = now or datetime.now(UTC)
+    output = destination or config.output_path
 
     timeout = httpx.Timeout(
         connect=config.connect_timeout,
@@ -181,7 +193,7 @@ def run(config: Config, now: datetime | None = None) -> str:
         )
 
         note = eclipse_note(config, now)
-        caption = format_caption(hour, note)
+        caption = format_caption(hour, note, *describe_events(rows, now))
         headline = visibility_headline(config, hour, now) if note else None
 
         placement = resolve_placement(config.profile, config.caption_corner)
@@ -202,7 +214,7 @@ def run(config: Config, now: datetime | None = None) -> str:
                 moon=frame,
                 caption=caption,
                 profile=config.profile,
-                destination=config.output_path,
+                destination=output,
                 placement=placement,
                 headline=headline,
             )
@@ -211,9 +223,70 @@ def run(config: Config, now: datetime | None = None) -> str:
             # leaving them behind after a failure is how a checkout fills a disk.
             frame.unlink(missing_ok=True)
 
-    set_wallpaper(config.output_path)
-    logger.info("Wallpaper set: %s", caption)
+    if apply:
+        set_wallpaper(output)
+        logger.info("Wallpaper set: %s", caption)
+    else:
+        logger.info("Rendered %s: %s", output, caption)
     return caption
+
+
+USAGE = """\
+usage: moonback [--at "YYYY-MM-DD HH:MM"] [--out FILE] [--version]
+
+With no arguments: render the current hour and set it as the wallpaper.
+
+  --at MOMENT   Render a different moment instead. UTC unless the value
+                carries an offset. Does NOT touch the desktop -- it writes to
+                --out and prints the path, for previewing an eclipse or a
+                supermoon without waiting for one.
+  --out FILE    Where --at writes. Default: preview.tif beside back.tif.
+"""
+
+
+def _parse_moment(text: str) -> datetime:
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ConfigError(
+            f"--at {text!r} is not a date/time I can read; try '2026-03-03 12:00'"
+        ) from exc
+    # Naive input means UTC: the ephemeris is UTC and guessing local here would
+    # silently render a different hour than the one that was asked for.
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class Options:
+    at: datetime | None = None
+    out: Path | None = None
+
+
+def parse_args(argv: list[str]) -> Options:
+    """Parse the command line, raising ConfigError on misuse.
+
+    Hand-rolled rather than argparse: there are two flags, and argparse would
+    exit the process itself rather than let main() decide the exit code.
+    """
+    at: datetime | None = None
+    out: Path | None = None
+
+    remaining = list(argv)
+    while remaining:
+        flag = remaining.pop(0)
+        if flag not in {"--at", "--out"}:
+            raise ConfigError(f"unknown argument {flag!r}\n\n{USAGE}")
+        if not remaining:
+            raise ConfigError(f"{flag} needs a value\n\n{USAGE}")
+        value = remaining.pop(0)
+        if flag == "--at":
+            at = _parse_moment(value)
+        else:
+            out = Path(value)
+
+    if out is not None and at is None:
+        raise ConfigError("--out only means something together with --at")
+    return Options(at=at, out=out)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -221,8 +294,12 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] in {"-V", "--version"}:
         print(f"moonback {__version__}")
         return 0
+    if argv and argv[0] in {"-h", "--help"}:
+        print(USAGE)
+        return 0
 
     try:
+        options = parse_args(argv)
         config = load_config()
     except ConfigError as exc:
         # Logging is not configured yet -- the log path itself comes from config.
@@ -238,7 +315,19 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        print(run(config))
+        if options.at is None:
+            print(run(config))
+        else:
+            # A preview must not disturb a working install: different file,
+            # desktop untouched, and the year taken from the moment asked for.
+            preview = options.out or config.home / "preview.tif"
+            caption = run(
+                replace(config, year=options.at.astimezone(UTC).year),
+                options.at,
+                destination=preview,
+                apply=False,
+            )
+            print(f"{caption}\n{preview}")
     except (MoonDataError, DownloadError, RenderError) as exc:
         logger.error("%s: %s", type(exc).__name__, exc)
         print(f"moonback: {exc}", file=sys.stderr)
