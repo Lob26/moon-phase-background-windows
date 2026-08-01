@@ -333,6 +333,23 @@ Three rules the prompts follow:
 Environment variables still override the file, so a one-off experiment needs no
 edit. `MOONBACK_*` remains the escape hatch; the file is the default path.
 
+`uninstall.ps1` follows the same rules in reverse: it removes the hourly task,
+asks about everything else, and reports what it kept as well as what it removed.
+Two details that are easy to get wrong:
+
+- **Unattended removes only what a flag asks for.** An earlier draft let
+  `-Unattended` fall through to each prompt's default, which quietly deleted the
+  virtualenv while the docstring promised "task only". A teardown script that
+  surprises you is worse than one that does too little.
+- **It never deletes the folder it lives in**, and it says so. Deleting your
+  checkout is your call, not a script's.
+
+Both scripts share [`scripts/shared.ps1`](scripts/shared.ps1), which also carries
+`Invoke-Native` — because PowerShell 5.1 wraps a native command's stderr in
+error records, and under `$ErrorActionPreference = 'Stop'` that turns uv's
+ordinary progress output into a fatal error. It only showed up once uv actually
+had a package to install; cached runs passed happily.
+
 ---
 
 ## Testing what actually breaks

@@ -247,10 +247,29 @@ machine.
 
 Exit codes: `0` success, `1` runtime failure, `2` bad configuration.
 
-### Uninstall
+## Uninstall
 
 ```powershell
-schtasks /delete /tn MoonlightSonata /f
+.\uninstall.ps1
 ```
 
-Then delete the folder. Remove `MOONBACK_*` variables if you set any.
+It removes the hourly task, then asks about everything else — the generated
+wallpaper and log, `moonback.toml`, and `.venv` — and reports what it removed
+and what it kept. It never deletes the repository folder itself.
+
+```powershell
+.\uninstall.ps1 -WhatIf                    # list what it would touch, change nothing
+.\uninstall.ps1 -Unattended                # the task (and build caches) only
+.\uninstall.ps1 -Unattended -All           # everything the installer created
+```
+
+**Unattended removes only what a flag asks for**, so `-Unattended` on its own
+can never be a surprise.
+
+Your desktop keeps showing the last Moon either way: Windows caches the image in
+`%APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper` and points the registry
+at that copy, so deleting `back.tif` does not blank the screen. Pick a new
+wallpaper in **Settings → Personalisation → Background** when you want to change
+it.
+
+Then delete the folder.
