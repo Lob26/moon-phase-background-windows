@@ -10,7 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9
+      # Pinned exactly: setup-uv publishes moving major tags only up to v7, so
+      # there is no "v9" to follow. Dependabot bumps this.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - run: uv run ruff check --no-fix .
@@ -26,7 +28,9 @@ jobs:
     name: test (group ${{ matrix.group }}/3)
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9
+      # Pinned exactly: setup-uv publishes moving major tags only up to v7, so
+      # there is no "v9" to follow. Dependabot bumps this.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       # The suite is pure: no network, no ImageMagick, no Windows. That is why
