@@ -82,7 +82,10 @@ earlier:
 
 They are indistinguishable. The Dial-A-Moon visualisation models phase and
 libration, not Earth's shadow, so a wallpaper driven only by those frames goes
-through totality showing a bland full disc and saying nothing about it.
+through totality showing a bland full disc and saying nothing about it. (There
+is better imagery for the eclipse hours themselves — see
+[below](#and-the-picture-changes-too) — but the caption is what carries it when
+NASA has not rendered that particular eclipse.)
 
 So the caption is the only signal there is, and it now carries one:
 
@@ -115,10 +118,34 @@ Four decisions worth naming:
   computed from the RA and Dec already in the ephemeris — see
   [Will you actually see it?](#will-you-actually-see-it) below.
 
-**The disc stays grey, and that is deliberate.** NASA's render models phase and
-libration, not Earth's shadow, so it never turns red. Tinting it ourselves would
-mean shipping invented imagery under NASA's name, which is not a trade worth
-making for a prettier screenshot. The text says what the picture cannot.
+### …and the picture changes too
+
+The obvious next step is to tint the disc red. That would mean shipping invented
+imagery under NASA's name, which is not a trade worth making for a nicer
+screenshot — so instead, look harder for real data.
+
+It exists. For major eclipses the SVS publishes a **separate telescopic
+sequence** that does render Earth's shadow, in colour. While an eclipse is under
+way the frame comes from there instead:
+
+![The partial phase and totality, both from NASA's telescopic sequence](docs/eclipse-red.jpg)
+
+That is NASA's imagery, not a synthesis. Three things this needed:
+
+- **A second, sparse table.** [`data/eclipse_views.txt`](data/eclipse_views.txt)
+  maps an eclipse onto its SVS id and frame range. NASA only produces these for
+  notable eclipses, usually months ahead, so most eclipses have no entry and
+  fall back to the ordinary Moon plus the caption.
+- **Cadence is derived, never assumed.** It is 10.000 s for the 2026 sequence
+  and **7.723 s** for the 2025 one. Hard-coding a round number puts the 2025
+  eclipse a whole phase out — verified by fetching both candidate frames for a
+  known mid-totality instant and looking at them.
+- **It is a choice.** The installer asks. Some people want one consistent view
+  all year; the setting is `eclipse_imagery`.
+
+The comparison above still stands for the other 8,750 hours of the year: the
+Dial-A-Moon sequence never shows an eclipse, which is why the caption exists
+even when the imagery is switched off.
 
 One wrinkle worth recording: NASA's own table prints `2038 Dec 11 17:44:60` —
 a rounding artefact that is not a valid time. The scraper normalises it by
@@ -348,10 +375,24 @@ against something it cannot influence: for seven cities on four continents,
 published visibility regions for the 2026-03-03 eclipse. Julian Date is pinned
 to Meeus's worked examples.
 
+The suite is grouped by what a failure tells you rather than by module, so
+`-m astronomy` is the set to re-run after touching any coordinate or catalogue
+maths:
+
 ```
 $ uv run pytest
-188 passed in 1.22s
+214 passed in 1.15s
+
+$ uv run pytest -m astronomy
+123 passed, 91 deselected
+
+$ uv run pytest --splits 3 --group 2      # what CI runs, balanced by .test_durations
+64 passed, 150 deselected
 ```
+
+`.test_durations` is committed so the three CI shards stay balanced instead of
+one taking three times as long as the others; regenerate it with
+`uv run pytest --store-durations` when the suite grows lopsided.
 
 Pure logic is a separate module precisely so all of this needs no network, no
 ImageMagick, and no Windows — `moondata.py` imports nothing but the standard
@@ -391,13 +432,14 @@ else currently uses that.
 moonback/
   moondata.py   pure: parse the ephemeris, map "now" to a frame   <- the interesting part
   eclipses.py   pure: parse the eclipse catalogue, describe the hour
+  eclipse_views.py  pure: map an eclipse hour onto NASA's telescopic render
   visibility.py pure: is the Moon above your horizon right now
   layout.py     pure: which corner the caption goes in, clear of the taskbar
   config.py     moonback.toml + env -> validated Config; fails before doing work
   nasa.py       download with timeout, bounded retry, atomic rename
   wallpaper.py  one magick pass; SystemParametersInfoW
   __main__.py   orchestration and exit codes
-tests/          188 tests, no network, no ImageMagick, no Windows
+tests/          214 tests in 3 groups, no network, no ImageMagick, no Windows
 data/           NASA mooninfo_<year>.txt (cached) and lunar_eclipses.txt
 scripts/        one-off scrapers: eclipse catalogue, yearly rollover
 .github/        the January rollover PR

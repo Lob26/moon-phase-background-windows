@@ -54,6 +54,7 @@ The questions:
 | What should happen when an hourly update fails? | `report` surfaces failures in Task Scheduler's *Last Run Result*; `quiet` keeps the previous wallpaper and stays silent. Either way it is logged. |
 | Which wallpaper size? | `standard` (~4 MB/hour) or `large` (~9 MB/hour). |
 | Which corner should the text sit in? | Taste. Whichever you pick, it is pushed clear of the detected taskbar automatically. |
+| Show NASA's eclipse imagery during an eclipse? | The year-round picture stays grey through totality. NASA renders a separate telescopic sequence for major eclipses that shows the real red Moon. |
 | Where are you? | Only used to decide whether a lunar eclipse is above your horizon. Skippable. |
 
 Re-run it any time to change your answers — your current ones become the
@@ -95,6 +96,7 @@ re-run setup. It is gitignored — the paths and coordinates in it are yours.
 profile  = "standard"     # or "large"
 on_error = "report"       # or "quiet"
 caption_corner = "bottom-right"
+eclipse_imagery = true    # NASA's telescopic render during an eclipse
 magick   = "C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe"
 
 # Delete this section to turn eclipse visibility off.
@@ -109,6 +111,7 @@ longitude = -74.07
 | `magick` | `MOONBACK_MAGICK` | `magick` on PATH | Command name or full path to `magick.exe` |
 | `profile` | `MOONBACK_PROFILE` | `standard` | `standard` (5461×3640) or `large` (8192×5461) |
 | `caption_corner` | `MOONBACK_CAPTION_CORNER` | `bottom-right` | `bottom-right`, `bottom-left`, `top-right` or `top-left`; the taskbar allowance applies to whichever you pick |
+| `eclipse_imagery` | `MOONBACK_ECLIPSE_IMAGERY` | `true` | Use NASA's telescopic eclipse sequence while an eclipse is under way, where one exists |
 | `on_error` | `MOONBACK_ON_ERROR` | `report` | `report` exits non-zero on failure; `quiet` keeps the last wallpaper and exits 0 |
 | `year` | `MOONBACK_YEAR` | current UTC year | Override the ephemeris year; mostly for testing |
 | `connect_timeout` | `MOONBACK_CONNECT_TIMEOUT` | `10` | Seconds to connect to NASA |
@@ -188,6 +191,26 @@ uv run python scripts/fetch_eclipses.py
 
 If the file is missing or corrupt the wallpaper still updates — it just captions
 without eclipse information and logs a warning.
+
+### Adding eclipse imagery for a new eclipse
+
+[`data/eclipse_views.txt`](data/eclipse_views.txt) is deliberately sparse: NASA
+renders a telescopic sequence only for notable eclipses, usually a few months
+ahead. Eclipses with no entry simply show the ordinary Moon and the caption.
+
+To add one:
+
+1. Find *"&lt;date&gt; Total Lunar Eclipse: Telescopic View"* in the
+   [SVS lunar eclipse gallery](https://svs.gsfc.nasa.gov/gallery/lunar-eclipse/)
+   and take the id from the URL.
+2. Read the UTC range off the page — *"The animations run from X to Y UTC"*.
+3. Take the frame count from the **plain** 3840×2160 frame set.
+4. Add the row and run `uv run pytest tests/test_eclipse_views.py`.
+
+The cadence is derived from those three numbers, never assumed — it is 10.000 s
+for the 2026 sequence and 7.723 s for the 2025 one, and assuming a round number
+puts the imagery a whole eclipse phase out. The tests check that each sequence
+actually brackets its own eclipse.
 
 ---
 
