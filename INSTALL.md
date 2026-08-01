@@ -90,9 +90,25 @@ Every question has a flag, so reinstalls and CI need no human:
 ### Run it by hand
 
 ```powershell
-uv run moonback            # once, printing the caption
+uv run moonback                                  # once, printing the caption
 uv run moonback --version
+uv run moonback --help
 ```
+
+### Previewing another moment
+
+`--at` renders any hour to a file **without touching your desktop** — handy for
+seeing an eclipse or a supermoon without waiting for one:
+
+```powershell
+uv run moonback --at "2026-03-03 12:00"                        # totality
+uv run moonback --at "2026-12-24 02:00" --out super.tif        # supermoon
+uv run moonback --at "2026-05-31 07:00"                        # micromoon + blue moon
+```
+
+The moment is UTC unless it carries an offset, and the year is taken from the
+date, so it fetches that year's ephemeris on its own. Writes `preview.tif`
+beside `back.tif` unless `--out` says otherwise.
 
 ---
 

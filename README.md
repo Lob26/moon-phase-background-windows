@@ -152,6 +152,32 @@ a rounding artefact that is not a valid time. The scraper normalises it by
 adding the seconds as a delta; the parser stays strict, so the data file is the
 contract.
 
+### Supermoons, micromoons and blue moons
+
+Free, in the sense that the data was already on disk: `mooninfo` carries a
+distance column the parser was walking straight past, and full moons are just
+local maxima of the illumination column. No epoch to count from, so nothing to
+drift.
+
+```
+Phase: 99.89% Days: 15.047 - Supermoon
+Phase: 99.81% Days: 14.458 - Micromoon - Blue moon
+```
+
+The second line is 2026-05-31, which is both — May has two full moons that year
+and the second one falls near apogee. That is why the caption takes a list.
+
+These are folklore with numbers bolted on, so every threshold is named and
+sourced rather than left inline: `SUPERMOON_MAX_KM = 361_885` is Espenak's
+"within 90% of perigee", and the popular press uses anything from 356,000 to
+370,000. A blue moon here is the *monthly* kind (the second full moon in a
+calendar month), measured in UTC because the ephemeris is — near a month
+boundary that can differ by a day from the local-calendar tradition the name
+comes from.
+
+The restraint that matters: **a label on every full moon would mean nothing.**
+Nine of 2026's thirteen get no label at all, and the tests assert that.
+
 ### Will you actually see it?
 
 A lunar eclipse is visible from roughly half the planet — whichever half has the
@@ -410,7 +436,7 @@ maths:
 
 ```
 $ uv run pytest
-216 passed in 1.19s
+236 passed in 1.42s
 
 $ uv run pytest -m astronomy
 123 passed, 91 deselected
@@ -462,13 +488,14 @@ moonback/
   moondata.py   pure: parse the ephemeris, map "now" to a frame   <- the interesting part
   eclipses.py   pure: parse the eclipse catalogue, describe the hour
   eclipse_views.py  pure: map an eclipse hour onto NASA's telescopic render
+  events.py     pure: supermoon, micromoon, blue moon
   visibility.py pure: is the Moon above your horizon right now
   layout.py     pure: which corner the caption goes in, clear of the taskbar
   config.py     moonback.toml + env -> validated Config; fails before doing work
   nasa.py       download with timeout, bounded retry, atomic rename
   wallpaper.py  one magick pass; SystemParametersInfoW
   __main__.py   orchestration and exit codes
-tests/          216 tests in 3 groups, no network, no ImageMagick, no Windows
+tests/          236 tests in 3 groups, no network, no ImageMagick, no Windows
 data/           NASA mooninfo_<year>.txt (cached) and lunar_eclipses.txt
 scripts/        one-off scrapers: eclipse catalogue, yearly rollover
 .github/        the January rollover PR
