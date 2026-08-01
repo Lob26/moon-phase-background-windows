@@ -198,11 +198,23 @@ taskbar is docked to and how thick it is, and pushes the caption clear. Queried
 per run, not at install time, because taskbars get moved and monitors get
 plugged in.
 
-The conversion is the only subtle part. The canvas is 3:2 and most screens are
-not, so Windows "Fill" crops the top and bottom before displaying it — which
-means screen pixels map to canvas pixels by the **width** ratio, the one Fill
-preserves. Only a taskbar on one of the chosen corner's *own* edges can cover
-the caption, so a bottom taskbar never shifts a top-corner caption sideways.
+Two things made the first attempt land the caption a sixth of the way up the
+screen instead of in a corner, and both are worth recording because neither
+looks like a bug in the code:
+
+- **The canvas edge is not the screen edge.** The canvas is 3:2, screens are
+  not, and Windows "Fill" *covers* the display and crops the overflow. On a
+  16:10 screen the bottom 113 canvas rows are never visible, so an inset
+  measured from the canvas edge is measuring from somewhere off-screen. The
+  margin is now given in screen pixels and converted inward through the crop.
+- **`SHAppBarMessage` reports physical pixels; `GetSystemMetrics` reports
+  DPI-virtualised ones** unless the process opts in. Pairing a real 96 px
+  taskbar with a virtualised 1440×900 desktop doubled its apparent share of a
+  screen that is really 2880×1800. `SetProcessDpiAwareness` first, then both
+  agree.
+
+Only a taskbar on one of the chosen corner's *own* edges can cover the caption,
+so a bottom taskbar never shifts a top-corner caption sideways.
 
 Which corner is a question at install time, because it is taste, not geometry.
 The taskbar allowance then applies to whichever you picked. All of it is pure
@@ -398,7 +410,7 @@ maths:
 
 ```
 $ uv run pytest
-214 passed in 1.15s
+216 passed in 1.19s
 
 $ uv run pytest -m astronomy
 123 passed, 91 deselected
@@ -456,7 +468,7 @@ moonback/
   nasa.py       download with timeout, bounded retry, atomic rename
   wallpaper.py  one magick pass; SystemParametersInfoW
   __main__.py   orchestration and exit codes
-tests/          214 tests in 3 groups, no network, no ImageMagick, no Windows
+tests/          216 tests in 3 groups, no network, no ImageMagick, no Windows
 data/           NASA mooninfo_<year>.txt (cached) and lunar_eclipses.txt
 scripts/        one-off scrapers: eclipse catalogue, yearly rollover
 .github/        the January rollover PR

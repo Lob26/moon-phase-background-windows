@@ -119,6 +119,23 @@ def resolve_placement(profile: RenderProfile, corner: str) -> Placement:
     )
 
 
+def _become_dpi_aware() -> None:
+    """Opt into physical pixels, so screen and taskbar are measured alike.
+
+    Best effort and idempotent: both calls are no-ops once awareness is set,
+    and shcore is absent before Windows 8.1.
+    """
+    import ctypes  # noqa: PLC0415
+
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            logger.debug("Could not set DPI awareness; sizes may be virtualised")
+
+
 def detect_desktop() -> tuple[Taskbar | None, Screen | None]:
     """Ask Windows where the taskbar is and how big the primary screen is.
 
@@ -138,6 +155,12 @@ def detect_desktop() -> tuple[Taskbar | None, Screen | None]:
                 ("rc", wintypes.RECT),
                 ("lParam", wintypes.LPARAM),
             ]
+
+        # SHAppBarMessage always reports physical pixels, but GetSystemMetrics
+        # reports DPI-virtualised ones unless the process opts in. Mixing them
+        # made a 96 px taskbar on a 2880 px screen look like 96 on 1440 -- twice
+        # as thick as it is -- and pushed the caption a sixth of the way up.
+        _become_dpi_aware()
 
         data = APPBARDATA()
         data.cbSize = ctypes.sizeof(APPBARDATA)

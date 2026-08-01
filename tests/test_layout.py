@@ -1,8 +1,16 @@
-"""Caption placement: corners, and staying clear of the taskbar.
+"""Caption placement: corners, cropping and the taskbar.
 
-The bug this prevents is mundane and was live: on a 1440x900 desktop with a
-96 px taskbar, the old fixed offset put the caption about 88 screen pixels
-above the bottom edge -- underneath the taskbar, invisible.
+Two bugs live here, both of which put the caption a sixth of the way up the
+screen instead of in a corner:
+
+* the inset was measured from the canvas edge, but Windows "Fill" crops the
+  canvas before you see it, so that edge is off-screen;
+* SHAppBarMessage reports physical pixels while GetSystemMetrics reports
+  DPI-virtualised ones, making a 96 px taskbar on a 2880 px screen look like
+  96 px on a 1440 px one -- twice its true share.
+
+Both are geometry, so both are pinned here in screen pixels: the unit the
+person looking at the wallpaper actually cares about.
 """
 
 from __future__ import annotations
@@ -11,16 +19,19 @@ import pytest
 
 from moonback.config import PROFILES
 from moonback.layout import (
+    CORNER_INSET,
     CORNERS,
     Edge,
     Screen,
     Taskbar,
+    fit_to_screen,
     place,
-    taskbar_in_canvas_pixels,
 )
 
 STANDARD = PROFILES["standard"]
-SCREEN = Screen(width_px=1440, height_px=900)
+
+#: The display this was reported on: 2880x1800 physical, 96 px taskbar.
+SCREEN = Screen(width_px=2880, height_px=1800)
 BOTTOM_TASKBAR = Taskbar(edge=Edge.BOTTOM, thickness_px=96)
 
 
@@ -35,6 +46,36 @@ def placement(corner: str, **kwargs):
     )
 
 
+def screen_offsets(spot, screen: Screen = SCREEN) -> tuple[float, float]:
+    """Distance from the corner's own edges, in physical screen pixels."""
+    fit = fit_to_screen(STANDARD.canvas_width, STANDARD.canvas_height, screen)
+    return ((spot.x - fit.crop_x) * fit.scale, (spot.caption_y - fit.crop_y) * fit.scale)
+
+
+class TestFitToScreen:
+    def test_a_wider_screen_crops_the_top_and_bottom(self) -> None:
+        # 3:2 canvas on a 16:10 screen: scaled to cover the width.
+        fit = fit_to_screen(5461, 3640, SCREEN)
+
+        assert fit.scale == pytest.approx(2880 / 5461)
+        assert fit.crop_x == 0
+        assert fit.crop_y == 113
+
+    def test_a_taller_screen_crops_the_sides(self) -> None:
+        # A 4:3 screen is narrower than the 3:2 canvas, so height drives it.
+        fit = fit_to_screen(5461, 3640, Screen(width_px=1600, height_px=1200))
+
+        assert fit.scale == pytest.approx(1200 / 3640)
+        assert fit.crop_y == 0
+        assert fit.crop_x > 0
+
+    def test_an_exactly_matching_aspect_crops_nothing(self) -> None:
+        fit = fit_to_screen(3000, 2000, Screen(width_px=1500, height_px=1000))
+
+        assert (fit.crop_x, fit.crop_y) == (0, 0)
+        assert fit.scale == pytest.approx(0.5)
+
+
 class TestCorners:
     @pytest.mark.parametrize(
         ("corner", "gravity"),
@@ -46,67 +87,86 @@ class TestCorners:
         ],
     )
     def test_each_corner_maps_to_its_gravity(self, corner: str, gravity: str) -> None:
-        assert placement(corner).gravity == gravity
+        assert placement(corner, screen=SCREEN).gravity == gravity
 
     def test_an_unknown_corner_lists_the_valid_ones(self) -> None:
         with pytest.raises(ValueError, match="bottom-right"):
             placement("middle")
 
     def test_every_advertised_corner_resolves(self) -> None:
-        # CORNERS is what config validates against and the installer offers.
         for corner in CORNERS:
-            assert placement(corner).gravity
+            assert placement(corner, screen=SCREEN).gravity
 
-    def test_the_default_reproduces_the_original_placement(self) -> None:
-        # gravity east +100+1200 on a 3640-tall canvas is 1820 - 1200 = 620
-        # up from the bottom. Existing wallpapers must not visibly move.
-        spot = placement("bottom-right")
-
-        assert (spot.gravity, spot.x, spot.caption_y) == ("southeast", 100, 620)
-
-    def test_the_headline_is_always_further_from_the_corner_edge(self) -> None:
-        # Gravity measures inward, so "above the caption" is a larger offset in
-        # a bottom corner and in a top corner alike.
+    def test_the_headline_sits_further_in_than_the_caption(self) -> None:
         for corner in CORNERS:
-            spot = placement(corner)
+            spot = placement(corner, screen=SCREEN)
             assert spot.headline_y == spot.caption_y + 85
 
 
-class TestTaskbarScaling:
-    def test_screen_pixels_convert_by_the_width_ratio(self) -> None:
-        # Windows "Fill" scales the 3:2 canvas to the screen width and crops
-        # the height, so width is the ratio that survives.
-        assert taskbar_in_canvas_pixels(BOTTOM_TASKBAR, SCREEN, 5461) == 364
+class TestVisibleInset:
+    def test_the_caption_is_inset_from_what_you_can_see(self) -> None:
+        # The regression: measured from the canvas edge this was ~270 screen px
+        # up, because the bottom 113 canvas rows are cropped away unseen.
+        spot = placement("top-right", screen=SCREEN)
+        _, from_edge = screen_offsets(spot)
 
-    @pytest.mark.parametrize(
-        ("taskbar", "screen"),
-        [
-            (None, SCREEN),
-            (BOTTOM_TASKBAR, None),
-            (BOTTOM_TASKBAR, Screen(width_px=0, height_px=900)),
-        ],
-    )
-    def test_unknown_desktops_contribute_nothing(self, taskbar, screen) -> None:
-        # Detection is best effort; a failure must degrade to the old behaviour.
-        assert taskbar_in_canvas_pixels(taskbar, screen, 5461) == 0
+        assert from_edge == pytest.approx(SCREEN.height_px * CORNER_INSET, abs=2)
+
+    def test_the_inset_is_the_same_on_any_display(self) -> None:
+        # Same visual result on a 1080p screen as on this 1800p one.
+        small = Screen(width_px=1920, height_px=1080)
+        spot = placement("top-left", screen=small)
+        _, from_edge = screen_offsets(spot, small)
+
+        assert from_edge == pytest.approx(small.height_px * CORNER_INSET, abs=2)
+
+    def test_the_caption_never_lands_in_the_cropped_region(self) -> None:
+        for screen in (SCREEN, Screen(1920, 1080), Screen(1600, 1200), Screen(3440, 1440)):
+            fit = fit_to_screen(STANDARD.canvas_width, STANDARD.canvas_height, screen)
+            for corner in CORNERS:
+                spot = placement(corner, screen=screen, taskbar=BOTTOM_TASKBAR)
+                assert spot.x > fit.crop_x
+                assert spot.caption_y > fit.crop_y
+
+    def test_without_a_screen_it_falls_back_to_the_canvas_margin(self) -> None:
+        # Detection is best effort; with no screen there is no way to know what
+        # is cropped, so the historical fixed offset is the honest default.
+        spot = placement("bottom-right")
+
+        assert (spot.x, spot.caption_y) == STANDARD.caption_margin
 
 
 class TestTaskbarAvoidance:
-    def test_a_bottom_taskbar_lifts_a_bottom_caption(self) -> None:
-        spot = placement("bottom-right", taskbar=BOTTOM_TASKBAR, screen=SCREEN)
+    def test_a_bottom_taskbar_lifts_a_bottom_caption_by_its_thickness(self) -> None:
+        without = screen_offsets(placement("bottom-right", screen=SCREEN))[1]
+        with_bar = screen_offsets(
+            placement("bottom-right", screen=SCREEN, taskbar=BOTTOM_TASKBAR)
+        )[1]
 
-        assert spot.caption_y == 620 + 364
+        assert with_bar - without == pytest.approx(BOTTOM_TASKBAR.thickness_px, abs=2)
+
+    def test_the_caption_clears_the_taskbar(self) -> None:
+        spot = placement("bottom-right", screen=SCREEN, taskbar=BOTTOM_TASKBAR)
+        _, from_edge = screen_offsets(spot)
+
+        assert from_edge > BOTTOM_TASKBAR.thickness_px
 
     def test_a_bottom_taskbar_leaves_a_top_caption_alone(self) -> None:
-        spot = placement("top-right", taskbar=BOTTOM_TASKBAR, screen=SCREEN)
+        with_bar = placement("top-right", screen=SCREEN, taskbar=BOTTOM_TASKBAR)
+        without = placement("top-right", screen=SCREEN)
 
-        assert spot.caption_y == 620, "only the corner's own edges can cover it"
+        assert with_bar == without
 
     def test_a_side_taskbar_pushes_the_caption_inward(self) -> None:
         left = Taskbar(edge=Edge.LEFT, thickness_px=96)
 
-        assert placement("bottom-left", taskbar=left, screen=SCREEN).x == 100 + 364
-        assert placement("bottom-right", taskbar=left, screen=SCREEN).x == 100
+        shifted = screen_offsets(placement("bottom-left", screen=SCREEN, taskbar=left))[0]
+        plain = screen_offsets(placement("bottom-left", screen=SCREEN))[0]
+
+        assert shifted - plain == pytest.approx(96, abs=2)
+        assert placement("bottom-right", screen=SCREEN, taskbar=left) == placement(
+            "bottom-right", screen=SCREEN
+        )
 
     @pytest.mark.parametrize(
         ("edge", "corner", "moves"),
@@ -122,50 +182,32 @@ class TestTaskbarAvoidance:
         ],
     )
     def test_only_the_shared_edge_matters(self, edge: str, corner: str, moves: bool) -> None:
-        spot = placement(corner, taskbar=Taskbar(edge=edge, thickness_px=96), screen=SCREEN)
-        baseline = placement(corner)
+        spot = placement(corner, screen=SCREEN, taskbar=Taskbar(edge=edge, thickness_px=96))
 
-        shifted = (spot.x, spot.caption_y) != (baseline.x, baseline.caption_y)
-        assert shifted is moves
+        assert (spot != placement(corner, screen=SCREEN)) is moves
 
     def test_a_taskbar_never_moves_the_caption_in_two_directions(self) -> None:
-        spot = placement("bottom-right", taskbar=BOTTOM_TASKBAR, screen=SCREEN)
+        spot = placement("bottom-right", screen=SCREEN, taskbar=BOTTOM_TASKBAR)
 
-        assert spot.x == 100, "a bottom taskbar is not a horizontal obstruction"
+        assert spot.x == placement("bottom-right", screen=SCREEN).x
 
-    def test_the_taskbar_allowance_widens_a_thin_margin(self) -> None:
-        """What this actually buys, measured in screen pixels.
 
-        The fixed offset was not hidden on a 1440x900 desktop -- it cleared a
-        96 px taskbar by about 37 px. That is a thin margin that nothing was
-        maintaining: a thicker taskbar, a side-docked one, or a taller screen
-        aspect eats it. The allowance turns luck into arithmetic.
+class TestDpiRegression:
+    def test_physical_and_virtualised_sizes_must_not_be_mixed(self) -> None:
+        """The bug: a 96 px taskbar measured against a half-size screen.
+
+        SHAppBarMessage always reports physical pixels. Pairing that 96 with a
+        DPI-virtualised 1440x900 doubles the taskbar's apparent share of the
+        screen, inflating the whole offset by about two thirds.
         """
-        scale = SCREEN.width_px / STANDARD.canvas_width
-        # "Fill" crops the canvas to the screen aspect, top and bottom equally.
-        visible_height = STANDARD.canvas_width * SCREEN.height_px / SCREEN.width_px
-        crop = (STANDARD.canvas_height - visible_height) / 2
+        correct = screen_offsets(
+            placement("bottom-right", screen=SCREEN, taskbar=BOTTOM_TASKBAR)
+        )[1]
 
-        def clearance(caption_y: int) -> float:
-            return (caption_y - crop) * scale - BOTTOM_TASKBAR.thickness_px
+        virtualised = Screen(width_px=1440, height_px=900)
+        wrong_spot = placement("bottom-right", screen=virtualised, taskbar=BOTTOM_TASKBAR)
+        # Measured against the real screen, which is what the eye sees.
+        wrong = screen_offsets(wrong_spot)[1]
 
-        assert clearance(placement("bottom-right").caption_y) == pytest.approx(37, abs=2)
-        assert clearance(
-            placement("bottom-right", taskbar=BOTTOM_TASKBAR, screen=SCREEN).caption_y
-        ) == pytest.approx(133, abs=2)
-
-    def test_a_thick_taskbar_would_have_covered_the_fixed_offset(self) -> None:
-        # The case the allowance genuinely rescues: a taskbar thicker than the
-        # margin the old fixed offset happened to leave.
-        thick = Taskbar(edge=Edge.BOTTOM, thickness_px=200)
-        scale = SCREEN.width_px / STANDARD.canvas_width
-        visible = STANDARD.canvas_width * SCREEN.height_px / SCREEN.width_px
-        crop = (STANDARD.canvas_height - visible) / 2
-
-        fixed = (placement("bottom-right").caption_y - crop) * scale
-        adjusted = (
-            placement("bottom-right", taskbar=thick, screen=SCREEN).caption_y - crop
-        ) * scale
-
-        assert fixed < thick.thickness_px, "the fixed offset would be behind it"
-        assert adjusted > thick.thickness_px
+        assert wrong > correct * 1.5, "the mismatch inflates the offset by half again"
+        assert correct == pytest.approx(96 + SCREEN.height_px * CORNER_INSET, abs=2)
