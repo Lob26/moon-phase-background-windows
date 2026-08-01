@@ -35,6 +35,12 @@ SVS_COLLECTIONS: dict[int, int] = {
 SVS_FRAME_BASE = "https://svs.gsfc.nasa.gov/vis/a000000"
 
 
+def svs_collection_url(collection: int) -> str:
+    """Base URL for an SVS visualisation. Ids are bucketed by hundreds."""
+    group = f"a{collection // 100 * 100:06d}"
+    return f"{SVS_FRAME_BASE}/{group}/a{collection:06d}"
+
+
 class ConfigError(Exception):
     """The environment cannot support a run. The message says how to fix it."""
 
@@ -103,6 +109,8 @@ class Config:
     on_error: str = OnError.REPORT
     observer: Observer | None = None
     caption_corner: str = "bottom-right"
+    eclipse_imagery: bool = True
+    """Swap in NASA's telescopic eclipse render while an eclipse is under way."""
 
     @property
     def ephemeris_path(self) -> Path:
@@ -111,6 +119,10 @@ class Config:
     @property
     def eclipse_path(self) -> Path:
         return self.home / "data" / "lunar_eclipses.txt"
+
+    @property
+    def eclipse_view_path(self) -> Path:
+        return self.home / "data" / "eclipse_views.txt"
 
     @property
     def canvas_path(self) -> Path:
@@ -122,9 +134,7 @@ class Config:
 
     @property
     def _collection_url(self) -> str:
-        collection = SVS_COLLECTIONS[self.year]
-        group = f"a{collection // 100 * 100:06d}"  # SVS buckets ids by hundreds
-        return f"{SVS_FRAME_BASE}/{group}/a{collection:06d}"
+        return svs_collection_url(SVS_COLLECTIONS[self.year])
 
     @property
     def mooninfo_url(self) -> str:
@@ -135,6 +145,14 @@ class Config:
             f"{self._collection_url}/frames/"
             f"{self.profile.frame_resolution}/plain/{filename}"
         )
+
+    def eclipse_frame_url(self, svs_id: int, filename: str) -> str:
+        """A frame from a per-eclipse telescopic sequence.
+
+        Always 3840x2160: the SVS publishes these at one size, so the 'large'
+        profile composites the same frame onto its bigger canvas.
+        """
+        return f"{svs_collection_url(svs_id)}/frames/3840x2160_16x9_30p/plain/{filename}"
 
 
 def resolve_magick(explicit: str | None = None) -> str:
@@ -213,6 +231,23 @@ def _as_int(value: object, name: str, default: int, *, minimum: int = 1) -> int:
     return number
 
 
+_TRUE = {"true", "yes", "on", "1"}
+_FALSE = {"false", "no", "off", "0"}
+
+
+def _as_bool(value: object, name: str, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value  # TOML has real booleans; the environment does not.
+    text = str(value).strip().lower()
+    if text in _TRUE:
+        return True
+    if text in _FALSE:
+        return False
+    raise ConfigError(f"{name} must be true or false, got {value!r}")
+
+
 def _read_observer(settings: dict[str, object]) -> Observer | None:
     """Build the observer from [location], or None when no place was configured."""
     location = settings.get("location")
@@ -277,6 +312,12 @@ def load_config(now: datetime | None = None) -> Config:
             f"(in {SETTINGS_FILENAME} or MOONBACK_CAPTION_CORNER)"
         )
 
+    eclipse_imagery = _as_bool(
+        _setting(settings, "MOONBACK_ECLIPSE_IMAGERY", "eclipse_imagery"),
+        "eclipse_imagery",
+        default=True,
+    )
+
     year = _as_int(
         _setting(settings, "MOONBACK_YEAR", "year"),
         "year",
@@ -310,6 +351,7 @@ def load_config(now: datetime | None = None) -> Config:
         on_error=on_error,
         observer=_read_observer(settings),
         caption_corner=corner,
+        eclipse_imagery=eclipse_imagery,
     )
 
     # The ephemeris is deliberately NOT checked here: it is a cache, fetched on

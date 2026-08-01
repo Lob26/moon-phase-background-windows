@@ -1,0 +1,26 @@
+# NASA SVS per-eclipse telescopic renders.
+#
+# The Dial-A-Moon frames used the rest of the year model phase and libration
+# only, so the Moon stays grey right through totality. For major eclipses the
+# SVS publishes a separate "Telescopic View" sequence that does show the
+# eclipse, in real colour. This table maps an eclipse onto that sequence.
+#
+# Deliberately sparse: NASA produces these for notable eclipses, usually only
+# a few months ahead, so most rows in lunar_eclipses.txt have no entry here and
+# simply fall back to the ordinary Moon plus the caption.
+#
+# Adding one:
+#   1. Find "<date> Total Lunar Eclipse: Telescopic View" in
+#      https://svs.gsfc.nasa.gov/gallery/lunar-eclipse/ and take the id.
+#   2. Read the UTC range off the page ("The animations run from X to Y UTC").
+#   3. Get the frame count from the "plain" 3840x2160 frame set.
+#   4. uv run pytest tests/test_eclipse_views.py -- the cadence is checked for
+#      sanity and every entry is verified to cover its own eclipse.
+#
+# Cadence is DERIVED as (last - first) / (frames - 1), never assumed: it is
+# 10.000 s for 2026 but 7.723 s for 2025. Hard-coding 10 s puts the 2025
+# eclipse a whole phase out.
+#
+# date        svs_id  first_frame_utc      last_frame_utc       frames
+2025-03-14    5472    2025-03-14T03:50:00  2025-03-14T10:09:50  2952
+2026-03-03    5605    2026-03-03T08:06:00  2026-03-03T15:38:50  2718

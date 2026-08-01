@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import httpx
 
 from . import __version__
 from .config import Config, ConfigError, OnError, load_config
+from .eclipse_views import EclipseViewError, parse_eclipse_views, view_at
 from .eclipses import EclipseError, describe_at, parse_eclipses
 from .moondata import (
     MoonDataError,
@@ -87,6 +89,52 @@ def visibility_headline(config: Config, hour: MoonHour, moment: datetime) -> str
     return headline
 
 
+@dataclass(frozen=True, slots=True)
+class FrameSource:
+    """Which NASA sequence this hour's frame comes from."""
+
+    url: str
+    filename: str
+    hint: str
+
+
+def choose_frame(config: Config, moment: datetime, index: int) -> FrameSource:
+    """Prefer NASA's telescopic eclipse render when one covers this hour.
+
+    Falls back to Dial-A-Moon whenever the user opted out, the table is
+    unreadable, or NASA never published a sequence for this eclipse -- which is
+    most of them. Best effort throughout: better a grey Moon than no wallpaper.
+    """
+    if config.eclipse_imagery:
+        try:
+            views = parse_eclipse_views(config.eclipse_view_path.read_text(encoding="utf-8"))
+            view = view_at(views, moment)
+        except (OSError, EclipseViewError) as exc:
+            logger.warning("Eclipse imagery table unavailable (%s); using the standard Moon", exc)
+            view = None
+
+        if view is not None:
+            filename = view.frame_filename(moment)
+            logger.info(
+                "Using SVS %d telescopic frame %s (%.3f s cadence)",
+                view.svs_id,
+                filename,
+                view.cadence_seconds,
+            )
+            return FrameSource(
+                url=config.eclipse_frame_url(view.svs_id, filename),
+                filename=filename,
+                hint=f"the SVS id or frame range for the {view.date} eclipse view is wrong",
+            )
+
+    filename = frame_filename(index)
+    return FrameSource(
+        url=config.frame_url(filename),
+        filename=filename,
+        hint="the frame number or this year's SVS collection id is wrong",
+    )
+
+
 def ensure_ephemeris(client: httpx.Client, config: Config) -> Path:
     """Return the year's ephemeris, fetching and caching it on first miss.
 
@@ -138,15 +186,15 @@ def run(config: Config, now: datetime | None = None) -> str:
 
         placement = resolve_placement(config.profile, config.caption_corner)
 
-        filename = frame_filename(index)
-        frame = config.home / filename
+        source = choose_frame(config, now, index)
+        frame = config.home / source.filename
         try:
             download(
                 client,
-                config.frame_url(filename),
+                source.url,
                 frame,
                 attempts=config.attempts,
-                not_found_hint="the frame number or this year's SVS collection id is wrong",
+                not_found_hint=source.hint,
             )
             compose(
                 config.magick,
