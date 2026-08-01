@@ -5,7 +5,11 @@
     "MoonlightSonata" task and runs it once.
 
     Idempotent: re-running it re-asks the questions, showing your current
-    answers as the defaults.
+    answers as the defaults. -ResetPreferences forgets them and starts from
+    the stock defaults instead.
+
+    Menus take Up/Down and Enter where the console supports it, and a typed
+    number everywhere else.
 
     Unattended (CI, reinstall scripts) - every question has a parameter, and
     -Unattended accepts the defaults for anything not passed:
@@ -31,7 +35,9 @@ param(
     [string] $LocationName,
     [double] $Latitude,
     [double] $Longitude,
-    [switch] $NoLocation
+    [switch] $NoLocation,
+    # Forget the previous answers and ask everything from defaults.
+    [switch] $ResetPreferences
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,6 +79,12 @@ function Read-ExistingSettings {
 }
 
 $script:NonInteractive = $Unattended.IsPresent
+
+if ($ResetPreferences -and (Test-Path $settingsPath)) {
+    Remove-Item $settingsPath -Force
+    Write-Host "Cleared the previous answers - starting from defaults." -ForegroundColor DarkGray
+}
+
 $existing = Read-ExistingSettings -Path $settingsPath
 if ($existing.Count -and -not $Unattended) {
     Write-Host "Found an existing moonback.toml - your current answers are the defaults." -ForegroundColor DarkGray

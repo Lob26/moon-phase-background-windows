@@ -57,8 +57,16 @@ The questions:
 | Show NASA's eclipse imagery during an eclipse? | The year-round picture stays grey through totality. NASA renders a separate telescopic sequence for major eclipses that shows the real red Moon. |
 | Where are you? | Only used to decide whether a lunar eclipse is above your horizon. Skippable. |
 
+Menus take **Up/Down and Enter**, or a typed number — some consoles (ISE, the
+VS Code terminal) cannot read individual keypresses, so those get a plain
+numbered list instead.
+
 Re-run it any time to change your answers — your current ones become the
-defaults.
+defaults. To start from the stock defaults instead:
+
+```powershell
+.\setup_environment.ps1 -ResetPreferences
+```
 
 If PowerShell blocks the script:
 
@@ -75,7 +83,8 @@ Every question has a flag, so reinstalls and CI need no human:
 .\setup_environment.ps1 -Unattended -SizeProfile large -OnError quiet `
     -LocationName "Bogota" -Latitude 4.71 -Longitude -74.07
 .\setup_environment.ps1 -Unattended -CaptionCorner top-right
-.\setup_environment.ps1 -Unattended -NoLocation
+.\setup_environment.ps1 -Unattended -NoEclipseImagery -NoLocation
+.\setup_environment.ps1 -Unattended -ResetPreferences
 ```
 
 ### Run it by hand
