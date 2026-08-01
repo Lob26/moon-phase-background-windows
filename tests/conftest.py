@@ -27,6 +27,26 @@ def make_hour(
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+#: Applied per module so the marker cannot drift from the file it describes.
+_GROUPS = {
+    "test_moondata": "astronomy",
+    "test_eclipses": "astronomy",
+    "test_eclipse_views": "astronomy",
+    "test_visibility": "astronomy",
+    "test_nasa": "plumbing",
+    "test_config": "plumbing",
+    "test_settings_file": "plumbing",
+    "test_ephemeris_cache": "plumbing",
+    "test_layout": "rendering",
+}
+
+
+def pytest_collection_modifyitems(items) -> None:
+    for item in items:
+        group = _GROUPS.get(Path(str(item.fspath)).stem)
+        if group:
+            item.add_marker(getattr(pytest.mark, group))
+
 _HEADER = (
     "   Date       Time    Phase    Age    Diam    Dist     RA        Dec"
     "      Slon      Slat     Elon     Elat   AxisA"

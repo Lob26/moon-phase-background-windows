@@ -15,7 +15,7 @@ moonback = "moonback.__main__:main"
 Homepage = "https://github.com/pedrolobato/moon-phase-background-windows"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "pytest-split>=0.9"]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,7 +26,14 @@ packages = ["moonback"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --strict-markers"
+markers = [
+    # Grouped by what a failure tells you, not by module. `-m astronomy` is the
+    # set to re-run after touching any of the coordinate or catalogue maths.
+    "astronomy: ephemeris, eclipse and horizon arithmetic",
+    "plumbing: downloads, retries, config and settings files",
+    "rendering: caption placement and ImageMagick invocation",
+]
 
 [tool.ruff]
 line-length = 100
