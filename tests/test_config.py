@@ -166,3 +166,30 @@ class TestLoadConfig:
 
         assert not loaded.ephemeris_path.exists()
         assert loaded.mooninfo_url.endswith("/a005587/mooninfo_2026.txt")
+
+
+class TestMonitorOutputs:
+    def test_numbered_from_one_in_plan_order(self) -> None:
+        config = _config(home=Path("/repo"))
+
+        assert config.monitor_output_path(1).name == "back-1.tif"
+        assert config.monitor_output_path(2).name == "back-2.tif"
+
+    def test_stale_outputs_never_include_the_single_monitor_image(
+        self, tmp_path: Path
+    ) -> None:
+        # back.tif is what the fallback and --at write. The dash in the glob is
+        # the only thing keeping a per-monitor cleanup from deleting it.
+        for name in ("back.tif", "back-1.tif", "back-2.tif", "back-7.tif"):
+            (tmp_path / name).write_bytes(b"")
+        config = _config(home=tmp_path)
+
+        stale = config.stale_monitor_outputs({tmp_path / "back-1.tif", tmp_path / "back-2.tif"})
+
+        assert [p.name for p in stale] == ["back-7.tif"]
+
+    def test_nothing_is_stale_when_every_output_is_live(self, tmp_path: Path) -> None:
+        (tmp_path / "back-1.tif").write_bytes(b"")
+        config = _config(home=tmp_path)
+
+        assert config.stale_monitor_outputs({tmp_path / "back-1.tif"}) == []

@@ -9,10 +9,20 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import RenderProfile
-from .layout import Edge, Placement, Screen, Taskbar, place
+from .layout import Edge, Placement, Screen, Taskbar, fit_to_screen, place, place_native
+from .monitors import (
+    MIN_PER_MONITOR,
+    Display,
+    detect_displays,
+    screen_of,
+    set_per_monitor,
+    taskbar_of,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +54,9 @@ def compose(
     canvas: Path,
     moon: Path,
     caption: str,
-    profile: RenderProfile,
     destination: Path,
     placement: Placement,
+    render: Screen | None = None,
     headline: str | None = None,
 ) -> Path:
     """Centre the moon frame on the star canvas, caption it, and write the result.
@@ -55,6 +65,11 @@ def compose(
     pair read and rewrote a ~57 MB TIFF twice per run for no benefit. Text is
     passed to ``-annotate`` as its own argv element rather than interpolated
     into a ``-draw`` program, so its content is never parsed.
+
+    ``render`` crops the result to a screen's exact pixels, the way Windows
+    "Fill" otherwise would, so the caption can be positioned in real screen
+    coordinates. Left as None the whole canvas is written and Windows does the
+    cropping, which is what the single-monitor path still wants.
     """
     spot = placement
     logger.debug("Caption at %s %+d%+d", spot.gravity, spot.x, spot.caption_y)
@@ -64,6 +79,20 @@ def compose(
         str(canvas),
         str(moon),
         "-gravity", "center", "-composite",
+    ]  # fmt: skip
+
+    if render is not None:
+        # `^` fills the box and overflows; -extent then trims to it. The
+        # background guards the pixel -extent can leave when `^` rounds down.
+        size = f"{render.width_px}x{render.height_px}"
+        command += [
+            "-background", "black",
+            "-resize", f"{size}^",
+            "-gravity", "center",
+            "-extent", size,
+        ]  # fmt: skip
+
+    command += [
         "-font", "Verdana",
         "-gravity", spot.gravity,
     ]  # fmt: skip
@@ -116,6 +145,106 @@ def resolve_placement(profile: RenderProfile, corner: str) -> Placement:
         taskbar=taskbar,
         screen=screen,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class Target:
+    """One image to render, and where it belongs once rendered."""
+
+    destination: Path
+    placement: Placement
+
+    render: Screen | None = None
+    """Crop to this size, or None to write the whole canvas."""
+
+    monitor_id: str | None = None
+    """The COM id to set it on, or None to use the whole-desktop API."""
+
+
+def caption_size(profile: RenderProfile, screen: Screen) -> int:
+    """The point size that looks the same as the canvas-sized render did.
+
+    ImageMagick draws at ``profile.point_size`` on the canvas and Windows then
+    scales the whole canvas by ``fit.scale`` before you see it, so the apparent
+    size has always been the product of the two. Pre-scaling ourselves means
+    annotating at that product to land pixel-identical.
+    """
+    fit = fit_to_screen(profile.canvas_width, profile.canvas_height, screen)
+    return max(1, round(profile.point_size * fit.scale))
+
+
+def plan_targets(
+    profile: RenderProfile,
+    corner: str,
+    displays: Sequence[Display],
+    outputs: Sequence[Path],
+) -> tuple[Target, ...]:
+    """One render per display, each sized and positioned for its own screen."""
+    targets = []
+    for display, destination in zip(displays, outputs, strict=True):
+        screen = screen_of(display.monitor)
+        targets.append(
+            Target(
+                destination=destination,
+                placement=place_native(
+                    corner,
+                    screen=screen,
+                    point_size=caption_size(profile, screen),
+                    taskbar=taskbar_of(display.monitor),
+                ),
+                render=screen,
+                monitor_id=display.wallpaper_id,
+            )
+        )
+    return tuple(targets)
+
+
+def resolve_targets(config, output: Path, *, per_monitor: bool) -> tuple[Target, ...]:
+    """Decide what to render: one image for the desktop, or one per monitor.
+
+    Per-monitor needs more than one live screen *and* a usable COM interface.
+    Everything else -- a single display, a preview, a machine where the shell
+    will not talk to us -- takes the path this tool has always taken.
+    """
+    single = (
+        Target(
+            destination=output,
+            placement=resolve_placement(config.profile, config.caption_corner),
+        ),
+    )
+    if not per_monitor:
+        return single
+
+    displays = detect_displays()
+    if len(displays) < MIN_PER_MONITOR:
+        logger.info("One monitor (or none detected); rendering a single wallpaper")
+        return single
+
+    outputs = [config.monitor_output_path(i) for i in range(1, len(displays) + 1)]
+    return plan_targets(config.profile, config.caption_corner, displays, outputs)
+
+
+def apply_wallpaper(targets: Sequence[Target]) -> None:
+    """Put each rendered image on its monitor, or fall back to one for all.
+
+    A partial per-monitor result still falls back, because a desktop where one
+    screen updated and another did not is more confusing than one consistent
+    image everywhere.
+    """
+    assignments = {t.monitor_id: t.destination for t in targets if t.monitor_id}
+
+    if len(assignments) == len(targets) > 1:
+        done = set_per_monitor(assignments)
+        if done == len(assignments):
+            logger.info("Wallpaper set on %d monitors", done)
+            return
+        logger.warning(
+            "Only %d of %d monitors accepted a wallpaper; using a single image",
+            done,
+            len(assignments),
+        )
+
+    set_wallpaper(targets[0].destination)
 
 
 def _become_dpi_aware() -> None:

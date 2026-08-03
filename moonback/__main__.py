@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,7 +27,7 @@ from .moondata import (
 from .nasa import DownloadError, download
 from .visibility import altitude_degrees
 from .visibility import describe as describe_visibility
-from .wallpaper import RenderError, compose, resolve_placement, set_wallpaper
+from .wallpaper import RenderError, Target, apply_wallpaper, compose, resolve_targets
 
 logger = logging.getLogger("moonback")
 
@@ -172,6 +173,9 @@ def run(
     """
     now = now or datetime.now(UTC)
     output = destination or config.output_path
+    # A preview renders one image with the fallback's crop model: it is showing
+    # you a moment, not impersonating a particular monitor.
+    targets = resolve_targets(config, output, per_monitor=apply and destination is None)
 
     timeout = httpx.Timeout(
         connect=config.connect_timeout,
@@ -196,8 +200,6 @@ def run(
         caption = format_caption(hour, note, *describe_events(rows, now))
         headline = visibility_headline(config, hour, now) if note else None
 
-        placement = resolve_placement(config.profile, config.caption_corner)
-
         source = choose_frame(config, now, index)
         frame = config.home / source.filename
         try:
@@ -208,27 +210,46 @@ def run(
                 attempts=config.attempts,
                 not_found_hint=source.hint,
             )
-            compose(
-                config.magick,
-                canvas=config.canvas_path,
-                moon=frame,
-                caption=caption,
-                profile=config.profile,
-                destination=output,
-                placement=placement,
-                headline=headline,
-            )
+            # The frame is downloaded once and composed once per monitor: the
+            # picture is the same everywhere, only the crop and caption differ.
+            for target in targets:
+                compose(
+                    config.magick,
+                    canvas=config.canvas_path,
+                    moon=frame,
+                    caption=caption,
+                    destination=target.destination,
+                    placement=target.placement,
+                    render=target.render,
+                    headline=headline,
+                )
         finally:
             # The frames are ~4 MB each and one is downloaded every hour;
             # leaving them behind after a failure is how a checkout fills a disk.
             frame.unlink(missing_ok=True)
 
     if apply:
-        set_wallpaper(output)
+        apply_wallpaper(targets)
+        _prune_stale_outputs(config, targets)
         logger.info("Wallpaper set: %s", caption)
     else:
         logger.info("Rendered %s: %s", output, caption)
     return caption
+
+
+def _prune_stale_outputs(config: Config, targets: Sequence[Target]) -> None:
+    """Delete per-monitor images left over from a run with more screens.
+
+    Runs only after a successful apply, so a file currently on screen is never
+    the one removed. Best effort: a locked leftover is not worth failing over.
+    """
+    keep = {target.destination for target in targets}
+    for path in config.stale_monitor_outputs(keep):
+        try:
+            path.unlink()
+            logger.info("Removed %s, left over from a previous monitor layout", path.name)
+        except OSError as exc:
+            logger.warning("Could not remove the stale %s (%s)", path.name, exc)
 
 
 USAGE = """\
