@@ -34,9 +34,8 @@ class RenderError(Exception):
 #: and you can see it from here" reads differently from the routine numbers.
 HEADLINE_COLOUR = "#ffc66d"
 
-#: Headline baseline offset above the caption, as a multiple of the caption's
-#: point size. Keeps the two lines proportional across both profiles.
-HEADLINE_LEADING = 1.7
+#: The headline is drawn a little smaller than the caption it sits above.
+HEADLINE_SCALE = 0.82
 
 
 def compose(
@@ -72,13 +71,13 @@ def compose(
     if headline:
         command += [
             "-fill", HEADLINE_COLOUR,
-            "-pointsize", str(round(profile.point_size * 0.82)),
+            "-pointsize", str(round(spot.point_size * HEADLINE_SCALE)),
             "-annotate", f"+{spot.x}+{spot.headline_y}", headline,
         ]  # fmt: skip
 
     command += [
         "-fill", "white",
-        "-pointsize", str(profile.point_size),
+        "-pointsize", str(spot.point_size),
         "-annotate", f"+{spot.x}+{spot.caption_y}", caption,
         # The NASA frames carry an alpha channel the star canvas does not. Left
         # on, it survives into the output and costs a third more disk for a
@@ -113,7 +112,7 @@ def resolve_placement(profile: RenderProfile, corner: str) -> Placement:
         canvas_width=profile.canvas_width,
         canvas_height=profile.canvas_height,
         margin=profile.caption_margin,
-        leading=round(profile.point_size * HEADLINE_LEADING),
+        point_size=profile.point_size,
         taskbar=taskbar,
         screen=screen,
     )
