@@ -110,6 +110,37 @@ The moment is UTC unless it carries an offset, and the year is taken from the
 date, so it fetches that year's ephemeris on its own. Writes `preview.tif`
 beside `back.tif` unless `--out` says otherwise.
 
+A preview always renders **one** image, even with several monitors attached: it
+is showing you a moment, not impersonating a particular screen.
+
+---
+
+## Multiple monitors
+
+Nothing to configure. With two or more screens attached, each one gets its own
+wallpaper — rendered at its native resolution, cropped for its own aspect ratio,
+and captioned clear of *its own* taskbar, which is often a different thickness
+from the primary's.
+
+```powershell
+uv run moonback
+magick identify back-1.tif back-2.tif    # 2880x1800 and 1920x1080, say
+```
+
+The files are `back-1.tif`, `back-2.tif`, … numbered with the primary first.
+Leftovers from a run with more screens attached are deleted automatically after
+a successful update.
+
+It falls back to a single `back.tif` for the whole desktop when there is one
+monitor, when the wallpaper is set to **Span**, or when Windows will not hand
+over the per-monitor interface. The reason is written to `mbg.log` either way.
+
+One consequence worth knowing: an **auto-hidden** taskbar reserves no space, so
+the caption sits where it would with no taskbar at all. That is the honest
+answer — a hidden bar covers nothing — but it differs from the single-monitor
+path, which still asks `SHAppBarMessage` and gets the thickness even while
+hidden.
+
 ---
 
 ## Configuration
