@@ -33,6 +33,12 @@ CORNERS = tuple(_CORNERS)
 #: a 1800 px display: close enough to read as a corner, far enough to breathe.
 CORNER_INSET = 0.025
 
+#: Gap between the caption and the headline above it, as a multiple of the
+#: caption's point size. It lives here rather than beside the ImageMagick call
+#: because the point size is now decided per monitor, and the leading has to be
+#: derived wherever the size is.
+HEADLINE_LEADING = 1.7
+
 
 class Edge:
     LEFT = "left"
@@ -45,7 +51,8 @@ class Edge:
 class Taskbar:
     """Which screen edge the taskbar is docked to, and how thick it is.
 
-    Thickness is in physical pixels, the units SHAppBarMessage reports in.
+    Thickness is in physical pixels: the units both SHAppBarMessage and the
+    monitor rects report in.
     """
 
     edge: str
@@ -60,12 +67,18 @@ class Screen:
 
 @dataclass(frozen=True, slots=True)
 class Placement:
-    """ImageMagick gravity and offsets, in canvas pixels."""
+    """Everything ImageMagick needs to draw the text, in output pixels.
+
+    ``point_size`` travels with the offsets because it is decided per monitor:
+    a caption sized for a 2880 px display would be half again too large on the
+    1920 px one beside it.
+    """
 
     gravity: str
     x: int
     caption_y: int
     headline_y: int
+    point_size: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,47 +112,83 @@ def fit_to_screen(canvas_width: int, canvas_height: int, screen: Screen) -> Fit:
     )
 
 
-def place(
-    corner: str,
-    *,
-    canvas_width: int,
-    canvas_height: int,
-    margin: tuple[int, int],
-    leading: int,
-    taskbar: Taskbar | None = None,
-    screen: Screen | None = None,
-) -> Placement:
-    """Resolve a corner into gravity and offsets, clear of the crop and taskbar.
+def _corner_offsets(corner: str, taskbar: Taskbar | None) -> tuple[str, int, int]:
+    """Gravity for ``corner``, and the taskbar allowance on each of its axes.
 
-    ``margin`` is the canvas-pixel fallback used when the screen is unknown --
-    detection is best effort, and without it there is no way to know what is
-    cropped. When the screen *is* known the inset is derived from it instead,
-    so the caption sits the same visual distance from the corner on any display.
+    Only a taskbar docked to one of this corner's *own* edges can cover it, so
+    a bottom taskbar never shifts a top-corner caption sideways.
     """
     if corner not in _CORNERS:
         raise ValueError(f"unknown corner {corner!r}; choose one of {', '.join(CORNERS)}")
 
     gravity, vertical_edge, horizontal_edge = _CORNERS[corner]
+    edge = taskbar.edge if taskbar else None
+    bar_x = taskbar.thickness_px if taskbar and edge == horizontal_edge else 0
+    bar_y = taskbar.thickness_px if taskbar and edge == vertical_edge else 0
+    return gravity, bar_x, bar_y
 
-    if screen is None:
-        margin_x, margin_y = margin
-    else:
-        fit = fit_to_screen(canvas_width, canvas_height, screen)
-        inset = screen.height_px * CORNER_INSET
 
-        # Only a taskbar docked to one of this corner's own edges can cover it.
-        edge = taskbar.edge if taskbar else None
-        bar_x = taskbar.thickness_px if taskbar and edge == horizontal_edge else 0
-        bar_y = taskbar.thickness_px if taskbar and edge == vertical_edge else 0
-
-        margin_x = fit.crop_x + round((inset + bar_x) / fit.scale)
-        margin_y = fit.crop_y + round((inset + bar_y) / fit.scale)
-
+def _placed(gravity: str, margin_x: int, margin_y: int, point_size: int) -> Placement:
     # Gravity measures inward from the corner's own edges, so the headline is
     # always further in than the caption whichever corner this is.
     return Placement(
         gravity=gravity,
         x=margin_x,
         caption_y=margin_y,
-        headline_y=margin_y + leading,
+        headline_y=margin_y + round(point_size * HEADLINE_LEADING),
+        point_size=point_size,
     )
+
+
+def place(
+    corner: str,
+    *,
+    canvas_width: int,
+    canvas_height: int,
+    margin: tuple[int, int],
+    point_size: int,
+    taskbar: Taskbar | None = None,
+    screen: Screen | None = None,
+) -> Placement:
+    """Place the caption on a canvas that Windows will crop to fit the screen.
+
+    ``margin`` is the canvas-pixel fallback used when the screen is unknown --
+    detection is best effort, and without it there is no way to know what is
+    cropped. When the screen *is* known the inset is derived from it instead,
+    so the caption sits the same visual distance from the corner on any display.
+
+    Use :func:`place_native` when the image is already the size of the screen.
+    """
+    gravity, bar_x, bar_y = _corner_offsets(corner, taskbar)
+
+    if screen is None:
+        margin_x, margin_y = margin
+    else:
+        fit = fit_to_screen(canvas_width, canvas_height, screen)
+        inset = screen.height_px * CORNER_INSET
+        margin_x = fit.crop_x + round((inset + bar_x) / fit.scale)
+        margin_y = fit.crop_y + round((inset + bar_y) / fit.scale)
+
+    return _placed(gravity, margin_x, margin_y, point_size)
+
+
+def place_native(
+    corner: str,
+    *,
+    screen: Screen,
+    point_size: int,
+    taskbar: Taskbar | None = None,
+) -> Placement:
+    """Place the caption on an image already rendered at the screen's size.
+
+    Nothing is cropped and nothing is scaled, so the offsets are simply the
+    inset plus whatever the taskbar covers -- in real screen pixels.
+
+    This is deliberately a separate function rather than a flag on
+    :func:`place`: a ``native=True`` would silently make ``canvas_width`` and
+    ``margin`` meaningless, which is exactly the unit confusion this module
+    exists to prevent.
+    """
+    gravity, bar_x, bar_y = _corner_offsets(corner, taskbar)
+    inset = round(screen.height_px * CORNER_INSET)
+    return _placed(gravity, inset + bar_x, inset + bar_y, point_size)

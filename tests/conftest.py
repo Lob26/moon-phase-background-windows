@@ -41,6 +41,8 @@ _GROUPS = {
     "test_ephemeris_cache": "plumbing",
     "test_layout": "rendering",
     "test_events": "astronomy",
+    "test_monitors": "rendering",
+    "test_wallpaper": "rendering",
 }
 
 

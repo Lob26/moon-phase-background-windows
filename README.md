@@ -17,8 +17,8 @@ Phase: 100.00% Days: 13.999 - Total lunar eclipse (totality)
 ```
 
 Roughly 250 lines of Python around one `magick` invocation and one
-`SystemParametersInfoW` call. **This page is about why it is shaped the way it
-is.** For setup, go to **[INSTALL.md](INSTALL.md)**.
+`SystemParametersInfoW` call — or one of each per monitor. **This page is about
+why it is shaped the way it is.** For setup, go to **[INSTALL.md](INSTALL.md)**.
 
 ---
 
@@ -247,6 +247,46 @@ The taskbar allowance then applies to whichever you picked. All of it is pure
 arithmetic in [`layout.py`](moonback/layout.py); the one `ctypes` call lives in
 `wallpaper.py` and degrades to plain margins if it fails.
 
+### One wallpaper per monitor
+
+`SystemParametersInfoW` sets **one** image and lets Windows re-crop it for every
+screen. So on a second monitor the caption was positioned for the primary's
+aspect ratio and the primary's taskbar, then cropped to a different shape — and
+landed somewhere nobody chose.
+
+Each monitor now gets its own render, at its own native resolution, set through
+`IDesktopWallpaper::SetWallpaper`. Three things fell out of it:
+
+- **The taskbar is finally measured per monitor.** `rcMonitor − rcWork` from
+  `GetMonitorInfoW` gives the docked edge *and* thickness for each screen —
+  96 px on this primary, 48 px on the secondary. `SHAppBarMessage`, which the
+  single-monitor path still uses, can only ever report the primary's, so the
+  secondary was being given the primary's numbers.
+- **Cropping ourselves removed the crop from the placement path.** The image is
+  already the size of the screen, so the caption offsets are plain screen
+  pixels: `inset + taskbar`. Both previous caption bugs lived in the conversion
+  that is now gone. `place_native()` is a separate function rather than a
+  `native=True` flag, because that flag would silently make `canvas_width` and
+  `margin` meaningless.
+- **It costs less.** 14.8 MB + 2 MB per hour here instead of 57 MB twice.
+
+Two APIs are needed and neither is sufficient: `EnumDisplayMonitors` knows the
+work area but not the wallpaper id, `IDesktopWallpaper` the reverse. They are
+joined on the monitor rectangle, which both report identically.
+
+The joining is where the care goes, because setting the right image on the wrong
+screen is worse than setting one image everywhere. Anything ambiguous — a
+monitor with no id, or two monitors reporting the same rectangle, which is what
+cloned displays look like — abandons the attempt and falls back. So does a
+partial apply: one screen updated and another not is more confusing than one
+consistent image. And `GetMonitorDevicePathCount` reports **4** ids for 2
+attached screens, because it counts monitors Windows merely remembers;
+`GetMonitorRECT` fails on those, and skipping them is routine rather than
+worth a warning every hour.
+
+Activation is automatic — two or more live screens and a usable COM interface —
+so plugging a monitor in just works and the installer gained no new question.
+
 ### Every external call gets a timeout and a bounded retry
 
 `svs.gsfc.nasa.gov` is a public NASA host doing us a favour, and it occasionally
@@ -436,7 +476,7 @@ maths:
 
 ```
 $ uv run pytest
-236 passed in 1.42s
+321 passed in 1.49s
 
 $ uv run pytest -m astronomy
 123 passed, 91 deselected
@@ -457,9 +497,11 @@ library, and `ctypes.windll` is imported inside the one function that needs it.
 
 ## Known trade-offs
 
-**The 57 MB elephant.** `back.tif` is a git-tracked 57 MB file that this tool
-**rewrites every hour**. It is in `.gitignore` now, but git still tracks it
-until you run:
+**The 57 MB elephant, mostly shrunk.** `back.tif` was a 57 MB file rewritten
+every hour. With more than one monitor the output is now rendered at each
+screen's exact size instead — 14.8 MB and 2 MB here rather than 57 MB twice —
+so the elephant is only still in the room on single-monitor installs. It is in
+`.gitignore`, but git tracks it until you run:
 
 ```
 git rm --cached back.tif
@@ -490,12 +532,13 @@ moonback/
   eclipse_views.py  pure: map an eclipse hour onto NASA's telescopic render
   events.py     pure: supermoon, micromoon, blue moon
   visibility.py pure: is the Moon above your horizon right now
+  monitors.py   which screens are attached, their taskbars and wallpaper ids
   layout.py     pure: which corner the caption goes in, clear of the taskbar
   config.py     moonback.toml + env -> validated Config; fails before doing work
   nasa.py       download with timeout, bounded retry, atomic rename
-  wallpaper.py  one magick pass; SystemParametersInfoW
+  wallpaper.py  one magick pass per screen; IDesktopWallpaper or SPI
   __main__.py   orchestration and exit codes
-tests/          236 tests in 3 groups, no network, no ImageMagick, no Windows
+tests/          321 tests in 3 groups, no network, no ImageMagick, no Windows
 data/           NASA mooninfo_<year>.txt (cached) and lunar_eclipses.txt
 scripts/        one-off scrapers: eclipse catalogue, yearly rollover
 .github/        the January rollover PR

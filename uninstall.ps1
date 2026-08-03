@@ -85,10 +85,13 @@ if ($task) {
 # into %APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper and points the
 # registry at that copy, so the last Moon stays up until you pick another.
 $generated = @(
-    @{ Path = Join-Path $repo 'back.tif';  Label = 'back.tif (the generated wallpaper)' }
-    @{ Path = Join-Path $repo 'mbg.log';   Label = 'mbg.log' }
-    @{ Path = Join-Path $repo 'samples';   Label = 'samples/' }
-) + @(Get-ChildItem -Path $repo -Filter 'moon.*.tif' -File -ErrorAction SilentlyContinue |
+    @{ Path = Join-Path $repo 'back.tif';    Label = 'back.tif (the generated wallpaper)' }
+    @{ Path = Join-Path $repo 'preview.tif'; Label = 'preview.tif' }
+    @{ Path = Join-Path $repo 'mbg.log';     Label = 'mbg.log' }
+    @{ Path = Join-Path $repo 'samples';     Label = 'samples/' }
+) + @(Get-ChildItem -Path $repo -Filter 'back-*.tif' -File -ErrorAction SilentlyContinue |
+        ForEach-Object { @{ Path = $_.FullName; Label = "$($_.Name) (per-monitor wallpaper)" } }
+     ) + @(Get-ChildItem -Path $repo -Filter 'moon.*.tif' -File -ErrorAction SilentlyContinue |
         ForEach-Object { @{ Path = $_.FullName; Label = $_.Name } }
      ) + @(Get-ChildItem -Path $repo -Filter '*.part' -File -ErrorAction SilentlyContinue |
         ForEach-Object { @{ Path = $_.FullName; Label = $_.Name } })

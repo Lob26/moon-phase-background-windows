@@ -21,11 +21,13 @@ from moonback.config import PROFILES
 from moonback.layout import (
     CORNER_INSET,
     CORNERS,
+    HEADLINE_LEADING,
     Edge,
     Screen,
     Taskbar,
     fit_to_screen,
     place,
+    place_native,
 )
 
 STANDARD = PROFILES["standard"]
@@ -41,7 +43,7 @@ def placement(corner: str, **kwargs):
         canvas_width=STANDARD.canvas_width,
         canvas_height=STANDARD.canvas_height,
         margin=STANDARD.caption_margin,
-        leading=85,
+        point_size=STANDARD.point_size,
         **kwargs,
     )
 
@@ -98,9 +100,10 @@ class TestCorners:
             assert placement(corner, screen=SCREEN).gravity
 
     def test_the_headline_sits_further_in_than_the_caption(self) -> None:
+        leading = round(STANDARD.point_size * HEADLINE_LEADING)
         for corner in CORNERS:
             spot = placement(corner, screen=SCREEN)
-            assert spot.headline_y == spot.caption_y + 85
+            assert spot.headline_y == spot.caption_y + leading
 
 
 class TestVisibleInset:
@@ -211,3 +214,106 @@ class TestDpiRegression:
 
         assert wrong > correct * 1.5, "the mismatch inflates the offset by half again"
         assert correct == pytest.approx(96 + SCREEN.height_px * CORNER_INSET, abs=2)
+
+
+#: The two monitors this feature was built against, measured from rcMonitor.
+PRIMARY = Screen(width_px=2880, height_px=1800)
+SECONDARY = Screen(width_px=1920, height_px=1080)
+
+
+class TestNativePlacement:
+    """Placing on an image already rendered at the screen's size."""
+
+    def test_offsets_are_plain_screen_pixels(self) -> None:
+        spot = place_native(
+            "bottom-right", screen=PRIMARY, point_size=26, taskbar=BOTTOM_TASKBAR
+        )
+
+        # 2.5% of 1800 = 45 in from the side, and 45 above a 96 px taskbar.
+        assert (spot.x, spot.caption_y) == (45, 141)
+
+    def test_a_smaller_monitor_gets_proportionally_smaller_offsets(self) -> None:
+        spot = place_native(
+            "bottom-right",
+            screen=SECONDARY,
+            point_size=18,
+            taskbar=Taskbar(edge=Edge.BOTTOM, thickness_px=48),
+        )
+
+        assert (spot.x, spot.caption_y) == (27, 75)
+
+    @pytest.mark.parametrize(
+        ("corner", "gravity"),
+        [
+            ("bottom-right", "southeast"),
+            ("bottom-left", "southwest"),
+            ("top-right", "northeast"),
+            ("top-left", "northwest"),
+        ],
+    )
+    def test_every_corner_resolves(self, corner: str, gravity: str) -> None:
+        assert place_native(corner, screen=PRIMARY, point_size=26).gravity == gravity
+
+    def test_an_unknown_corner_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="bottom-right"):
+            place_native("middle", screen=PRIMARY, point_size=26)
+
+    @pytest.mark.parametrize(
+        ("edge", "corner", "moves"),
+        [
+            (Edge.BOTTOM, "bottom-right", True),
+            (Edge.BOTTOM, "top-left", False),
+            (Edge.TOP, "top-left", True),
+            (Edge.RIGHT, "top-right", True),
+            (Edge.LEFT, "bottom-right", False),
+        ],
+    )
+    def test_only_the_shared_edge_matters(self, edge: str, corner: str, moves: bool) -> None:
+        # Same rule as place(); both now share _corner_offsets().
+        bar = Taskbar(edge=edge, thickness_px=96)
+        shifted = place_native(corner, screen=PRIMARY, point_size=26, taskbar=bar)
+        plain = place_native(corner, screen=PRIMARY, point_size=26)
+
+        assert (shifted != plain) is moves
+
+    def test_no_taskbar_leaves_only_the_inset(self) -> None:
+        spot = place_native("bottom-right", screen=PRIMARY, point_size=26)
+
+        assert spot.caption_y == round(PRIMARY.height_px * CORNER_INSET)
+
+    def test_the_headline_leads_off_the_point_size(self) -> None:
+        spot = place_native("top-left", screen=PRIMARY, point_size=26)
+
+        assert spot.headline_y == spot.caption_y + round(26 * HEADLINE_LEADING)
+
+
+class TestNativeMatchesFill:
+    """The premise of the whole change, pinned.
+
+    Rendering natively must put the caption where the old canvas-plus-Fill path
+    put it *on screen*. If these two disagree, switching to native rendering
+    would visibly move every caption.
+    """
+
+    @pytest.mark.parametrize("corner", CORNERS)
+    @pytest.mark.parametrize(
+        "screen",
+        [PRIMARY, SECONDARY, Screen(3440, 1440), Screen(1600, 1200), Screen(5120, 1440)],
+    )
+    def test_same_apparent_position(self, corner: str, screen: Screen) -> None:
+        bar = Taskbar(edge=Edge.BOTTOM, thickness_px=48)
+
+        old = place(
+            corner,
+            canvas_width=STANDARD.canvas_width,
+            canvas_height=STANDARD.canvas_height,
+            margin=STANDARD.caption_margin,
+            point_size=STANDARD.point_size,
+            taskbar=bar,
+            screen=screen,
+        )
+        old_x, old_y = screen_offsets(old, screen)
+        new = place_native(corner, screen=screen, point_size=26, taskbar=bar)
+
+        assert new.x == pytest.approx(old_x, abs=2)
+        assert new.caption_y == pytest.approx(old_y, abs=2)

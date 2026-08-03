@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import tomllib
+from collections.abc import Container
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +21,9 @@ from .visibility import Observer
 #: Written by setup_environment.ps1 from the answers given at install time.
 #: Environment variables still win, so a one-off run can override anything.
 SETTINGS_FILENAME = "moonback.toml"
+
+#: Per-monitor outputs. The dash keeps this from ever matching back.tif.
+MONITOR_OUTPUT_GLOB = "back-*.tif"
 
 #: Repo root: the ephemeris tables and canvas images live alongside the package.
 DEFAULT_HOME = Path(__file__).resolve().parent.parent
@@ -131,6 +135,20 @@ class Config:
     @property
     def output_path(self) -> Path:
         return self.home / "back.tif"
+
+    def monitor_output_path(self, index: int) -> Path:
+        """Where one monitor's wallpaper goes, numbered from 1 in plan order.
+
+        A separate name from ``back.tif`` so the single-monitor fallback and
+        ``--at`` keep writing exactly what they always did.
+        """
+        return self.home / f"back-{index}.tif"
+
+    def stale_monitor_outputs(self, keep: Container[Path]) -> list[Path]:
+        """Per-monitor images left over from a run with more screens attached."""
+        return [
+            path for path in self.home.glob(MONITOR_OUTPUT_GLOB) if path not in keep
+        ]
 
     @property
     def _collection_url(self) -> str:
