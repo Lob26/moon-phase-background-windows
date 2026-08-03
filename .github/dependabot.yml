@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  # setup-uv is pinned to an exact version because it publishes moving major
+  # tags only up to v7, so there is no "v9" for the workflow to follow. Nothing
+  # would ever move that pin without this file -- which the workflow comments
+  # already claimed was happening.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - enhancement
+
+  # httpx plus three dev tools. Monthly, because weekly on a five-dependency
+  # project is noise, and noise is how real updates get ignored.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - enhancement
