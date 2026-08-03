@@ -1,4 +1,5 @@
-"""Where the caption goes, given a corner and whatever the taskbar is covering.
+"""How the image maps onto a screen: what gets cropped, where the caption goes,
+and how large the Moon is drawn.
 
 Pure: the OS query lives in wallpaper.py and its results are passed in here, so
 the placement arithmetic is testable without a desktop.
@@ -38,6 +39,29 @@ CORNER_INSET = 0.025
 #: because the point size is now decided per monitor, and the leading has to be
 #: derived wherever the size is.
 HEADLINE_LEADING = 1.7
+
+#: Vertical field of view of NASA's render, in arcseconds.
+#:
+#: Not published by the SVS -- measured. The disc is proportional to the
+#: ephemeris' own ``Diam`` column, so one number describes the whole mapping:
+#:
+#:   sample                  sequence      disc     Diam      disc/Diam
+#:   03-midyear              Dial-A-Moon   1827 px  1770.7"   1.0318
+#:   05-eclipse-visible      Dial-A-Moon   1895 px  1836.4"   1.0319
+#:   07-eclipse-totality     telescopic    1938 px  1872.9"   1.0348
+#:
+#: The two Dial-A-Moon rows agree to 0.01%, and the per-eclipse telescopic
+#: sequence lands within the error of thresholding a dim red disc -- so the
+#: same field of view covers both. 2160 / 1.0318 = 2093.
+MOON_FIELD_OF_VIEW_ARCSEC = 2093.0
+
+#: Most of the screen's height the Moon may occupy before it gets shrunk.
+#:
+#: Chosen so that no conventional screen is ever touched: 16:9 reaches 67.5% at
+#: perigee, and shrinking there would make a supermoon look like any other
+#: night while the caption still called it one. Only 21:9 (80-91%) and 32:9
+#: (119-135%, i.e. clipped) ever exceed it.
+MAX_DISC_FRACTION = 0.70
 
 
 class Edge:
@@ -138,6 +162,41 @@ def _placed(gravity: str, margin_x: int, margin_y: int, point_size: int) -> Plac
         headline_y=margin_y + round(point_size * HEADLINE_LEADING),
         point_size=point_size,
     )
+
+
+def disc_fraction_of_frame(diameter_arcsec: float) -> float:
+    """How much of the frame's height the lunar disc fills.
+
+    Dimensionless on purpose: the same answer holds for a 2160-tall Dial-A-Moon
+    frame and a 3240-tall one, because both render the same field of view.
+    """
+    return diameter_arcsec / MOON_FIELD_OF_VIEW_ARCSEC
+
+
+def moon_scale(
+    *,
+    canvas_width: int,
+    canvas_height: int,
+    screen: Screen,
+    frame_height_px: int,
+    diameter_arcsec: float,
+) -> float:
+    """How much to shrink the Moon so it stays inside the screen. Never above 1.
+
+    The Moon is composited onto the canvas at its own size, and the canvas is
+    then scaled to *cover* the screen. On a display wider than the canvas that
+    scale is driven by width while the visible height collapses, so the disc
+    grows relative to what you can see -- past 3:2 it eventually runs off the
+    top and bottom entirely.
+
+    Returns 1.0 whenever the disc already fits, so ordinary screens render
+    exactly as they always have and no resampling happens at all.
+    """
+    fit = fit_to_screen(canvas_width, canvas_height, screen)
+    disc_px = frame_height_px * disc_fraction_of_frame(diameter_arcsec) * fit.scale
+    if disc_px <= 0:
+        return 1.0
+    return min(1.0, MAX_DISC_FRACTION * screen.height_px / disc_px)
 
 
 def place(

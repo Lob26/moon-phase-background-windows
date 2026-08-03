@@ -22,10 +22,13 @@ from moonback.layout import (
     CORNER_INSET,
     CORNERS,
     HEADLINE_LEADING,
+    MAX_DISC_FRACTION,
     Edge,
     Screen,
     Taskbar,
+    disc_fraction_of_frame,
     fit_to_screen,
+    moon_scale,
     place,
     place_native,
 )
@@ -317,3 +320,106 @@ class TestNativeMatchesFill:
 
         assert new.x == pytest.approx(old_x, abs=2)
         assert new.caption_y == pytest.approx(old_y, abs=2)
+
+
+#: Extremes of the Moon's apparent diameter across 2026, from the ephemeris.
+APOGEE_ARCSEC, PERIGEE_ARCSEC = 1763.4, 2009.6
+FRAME_HEIGHT = 2160
+
+#: Aspect ratios that are fine today and must stay untouched.
+CONVENTIONAL = [Screen(1600, 1200), Screen(2880, 1800), Screen(1920, 1080)]
+#: Aspect ratios wider than the 3:2 canvas, where the disc outgrows the screen.
+WIDE = [Screen(3440, 1440), Screen(5120, 1440), Screen(3840, 1080)]
+
+
+def scale_for(screen: Screen, diameter: float = 1885.0) -> float:
+    return moon_scale(
+        canvas_width=STANDARD.canvas_width,
+        canvas_height=STANDARD.canvas_height,
+        screen=screen,
+        frame_height_px=FRAME_HEIGHT,
+        diameter_arcsec=diameter,
+    )
+
+
+def disc_share_of_height(screen: Screen, diameter: float = 1885.0) -> float:
+    """What fraction of the screen's height the disc ends up filling."""
+    fit = fit_to_screen(STANDARD.canvas_width, STANDARD.canvas_height, screen)
+    disc = FRAME_HEIGHT * disc_fraction_of_frame(diameter) * fit.scale * scale_for(screen, diameter)
+    return disc / screen.height_px
+
+
+class TestDiscFractionOfFrame:
+    @pytest.mark.parametrize(
+        ("diameter", "disc_px"),
+        [
+            # Measured on the rendered samples, centre-row width.
+            pytest.param(1770.7, 1827, id="03-midyear-dial-a-moon"),
+            pytest.param(1836.4, 1895, id="05-eclipse-visible-dial-a-moon"),
+            pytest.param(1872.9, 1938, id="07-totality-telescopic"),
+        ],
+    )
+    def test_matches_the_measured_samples(self, diameter: float, disc_px: int) -> None:
+        # Within 1%: the telescopic sample is the loosest, since thresholding a
+        # dim red disc picks up a little glow.
+        predicted = FRAME_HEIGHT * disc_fraction_of_frame(diameter)
+
+        assert predicted == pytest.approx(disc_px, rel=0.01)
+
+    def test_grows_with_apparent_diameter(self) -> None:
+        # 14% across a year -- which is why this is not a hard-coded constant.
+        assert disc_fraction_of_frame(PERIGEE_ARCSEC) > disc_fraction_of_frame(APOGEE_ARCSEC)
+
+
+class TestMoonScale:
+    @pytest.mark.parametrize("screen", CONVENTIONAL, ids=lambda s: f"{s.width_px}x{s.height_px}")
+    @pytest.mark.parametrize("diameter", [APOGEE_ARCSEC, 1885.0, PERIGEE_ARCSEC])
+    def test_conventional_screens_are_never_touched(self, screen: Screen, diameter: float) -> None:
+        # Exactly 1.0, not merely close: at 1.0 compose() emits no resize at
+        # all, so these screens render byte-identically to before.
+        assert scale_for(screen, diameter) == 1.0
+
+    @pytest.mark.parametrize("screen", WIDE, ids=lambda s: f"{s.width_px}x{s.height_px}")
+    @pytest.mark.parametrize("diameter", [APOGEE_ARCSEC, 1885.0, PERIGEE_ARCSEC])
+    def test_wide_screens_are_capped(self, screen: Screen, diameter: float) -> None:
+        assert scale_for(screen, diameter) < 1.0
+        assert disc_share_of_height(screen, diameter) == pytest.approx(MAX_DISC_FRACTION, abs=1e-6)
+
+    @pytest.mark.parametrize("screen", CONVENTIONAL + WIDE, ids=lambda s: f"{s.width_px}")
+    @pytest.mark.parametrize("diameter", [APOGEE_ARCSEC, PERIGEE_ARCSEC])
+    def test_the_moon_is_never_clipped(self, screen: Screen, diameter: float) -> None:
+        """The bug this exists for: 32:9 was 118-135% of screen height."""
+        assert disc_share_of_height(screen, diameter) <= MAX_DISC_FRACTION + 1e-6
+
+    def test_it_never_enlarges(self) -> None:
+        # A tall screen shows the whole canvas and then some; the Moon must not
+        # be blown up to meet the cap.
+        assert scale_for(Screen(1200, 1600)) == 1.0
+
+    def test_a_supermoon_still_looks_bigger_on_a_normal_screen(self) -> None:
+        # Capping must not undercut the Supermoon caption: on 16:9 the disc
+        # really is larger at perigee than at apogee.
+        small = disc_share_of_height(Screen(1920, 1080), APOGEE_ARCSEC)
+        large = disc_share_of_height(Screen(1920, 1080), PERIGEE_ARCSEC)
+
+        assert large > small * 1.1
+
+    def test_a_bigger_moon_needs_more_shrinking(self) -> None:
+        wide = Screen(5120, 1440)
+
+        assert scale_for(wide, PERIGEE_ARCSEC) < scale_for(wide, APOGEE_ARCSEC)
+
+    def test_a_taller_frame_is_scaled_down_further(self) -> None:
+        # The 'large' profile's frames are 3240 tall, and eclipse frames are
+        # always 2160, so the incoming height genuinely varies.
+        wide = Screen(5120, 1440)
+        common = dict(
+            canvas_width=STANDARD.canvas_width,
+            canvas_height=STANDARD.canvas_height,
+            screen=wide,
+            diameter_arcsec=1885.0,
+        )
+
+        assert moon_scale(frame_height_px=3240, **common) < moon_scale(
+            frame_height_px=2160, **common
+        )

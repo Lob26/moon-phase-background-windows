@@ -287,6 +287,49 @@ worth a warning every hour.
 Activation is automatic — two or more live screens and a usable COM interface —
 so plugging a monitor in just works and the installer gained no new question.
 
+### The Moon has to fit the screen it lands on
+
+The star canvas is 3:2. Any display wider than that loses height to the crop —
+but the Moon frame was composited at 1:1 and never resized, so the wider the
+screen, the larger the disc grew *relative to what you can see*. Past a point it
+simply ran off the top and bottom:
+
+| screen | apogee | mean | perigee | |
+|---|---|---|---|---|
+| 4:3, 16:10, 16:9 | 50–59% | 53–63% | 57–68% | fine |
+| 21:9 3440×1440 | 79.6% | 84.2% | 90.7% | cramped |
+| **32:9 5120×1440** | **118.5%** | **125.4%** | **135.0%** | **clipped** |
+
+The Moon is now shrunk just enough to stay under **70%** of screen height, and
+never enlarged.
+
+**70%, not a tidier 55%, because normalising would break another feature.** A
+perigee supermoon reaches 67.5% on 16:9; capping below that would shrink it to
+match every other night while the caption still read `Supermoon`. At 70% no
+conventional aspect is touched at any point in the lunar cycle — the scale comes
+out at exactly `1.0`, so ImageMagick is given no resize at all and those screens
+render byte-identically. Only 21:9 and 32:9 ever change.
+
+**The size is computed, not hardcoded**, from the ephemeris' `Diam` column —
+another column the parser was already capturing and throwing away, exactly like
+`distance` before supermoons. It matters: `Diam` swings **14%** across a year, so
+a fixed disc size would under-estimate by 12% at perigee, which is precisely when
+a supermoon is most likely to clip.
+
+The one calibration is the render's field of view, which the SVS does not
+publish. Measured across three samples:
+
+```
+  sample                sequence      disc     Diam      disc/Diam
+  03-midyear            Dial-A-Moon   1827 px  1770.7"   1.0318
+  05-eclipse-visible    Dial-A-Moon   1895 px  1836.4"   1.0319
+  07-eclipse-totality   telescopic    1938 px  1872.9"   1.0348
+```
+
+The two Dial-A-Moon rows agree to 0.01%, and the per-eclipse telescopic sequence
+lands within the error of thresholding a dim red disc — so **one constant covers
+both sequences**: a 2093″ vertical field of view.
+
 ### Every external call gets a timeout and a bounded retry
 
 `svs.gsfc.nasa.gov` is a public NASA host doing us a favour, and it occasionally
@@ -476,7 +519,7 @@ maths:
 
 ```
 $ uv run pytest
-321 passed in 1.49s
+368 passed in 1.6s
 
 $ uv run pytest -m astronomy
 123 passed, 91 deselected
@@ -538,7 +581,7 @@ moonback/
   nasa.py       download with timeout, bounded retry, atomic rename
   wallpaper.py  one magick pass per screen; IDesktopWallpaper or SPI
   __main__.py   orchestration and exit codes
-tests/          321 tests in 3 groups, no network, no ImageMagick, no Windows
+tests/          368 tests in 3 groups, no network, no ImageMagick, no Windows
 data/           NASA mooninfo_<year>.txt (cached) and lunar_eclipses.txt
 scripts/        one-off scrapers: eclipse catalogue, yearly rollover
 .github/        the January rollover PR

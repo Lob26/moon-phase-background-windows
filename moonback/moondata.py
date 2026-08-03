@@ -52,6 +52,9 @@ class MoonHour:
     cycle_age_days: float
     """Days elapsed since the last new moon."""
 
+    diameter_arcsec: float
+    """Apparent angular diameter. Sets how large the Moon is drawn in the frame."""
+
     distance_km: float
     """Centre-to-centre distance to the Moon."""
 
@@ -104,6 +107,7 @@ def parse_mooninfo(text: str) -> tuple[MoonHour, ...]:
                 ),
                 illumination_pct=float(fields["phase"]),
                 cycle_age_days=float(fields["age"]),
+                diameter_arcsec=float(fields["diameter"]),
                 distance_km=float(fields["distance"]),
                 right_ascension_hours=float(fields["ra"]),
                 declination_degrees=float(fields["dec"]),

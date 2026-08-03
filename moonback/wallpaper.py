@@ -57,6 +57,7 @@ def compose(
     destination: Path,
     placement: Placement,
     render: Screen | None = None,
+    moon_scale: float = 1.0,
     headline: str | None = None,
 ) -> Path:
     """Centre the moon frame on the star canvas, caption it, and write the result.
@@ -70,16 +71,25 @@ def compose(
     "Fill" otherwise would, so the caption can be positioned in real screen
     coordinates. Left as None the whole canvas is written and Windows does the
     cropping, which is what the single-monitor path still wants.
+
+    ``moon_scale`` shrinks the Moon before compositing so it survives that crop
+    on a screen wider than the canvas. At 1.0 -- every conventional aspect
+    ratio -- nothing is emitted for it and the frame is composited untouched.
     """
     spot = placement
     logger.debug("Caption at %s %+d%+d", spot.gravity, spot.x, spot.caption_y)
 
-    command = [
-        magick,
-        str(canvas),
-        str(moon),
-        "-gravity", "center", "-composite",
-    ]  # fmt: skip
+    command = [magick, str(canvas)]
+
+    if moon_scale < 1.0:
+        # Parenthesised so the resize applies to the moon alone and not to the
+        # canvas already on the stack.
+        logger.info("Shrinking the Moon to %.1f%% so it fits the screen", 100 * moon_scale)
+        command += ["(", str(moon), "-resize", f"{moon_scale * 100:.4f}%", ")"]
+    else:
+        command += [str(moon)]
+
+    command += ["-gravity", "center", "-composite"]
 
     if render is not None:
         # `^` fills the box and overflows; -extent then trims to it. The
@@ -129,14 +139,16 @@ def compose(
     return destination
 
 
-def resolve_placement(profile: RenderProfile, corner: str) -> Placement:
-    """Work out where the caption goes, asking Windows about the taskbar.
+def resolve_placement(profile: RenderProfile, corner: str) -> tuple[Placement, Screen | None]:
+    """Where the caption goes on the whole-desktop image, and the screen it is for.
 
     Queried per run rather than at install time: the taskbar gets moved and
-    screens get plugged in.
+    screens get plugged in. The screen comes back alongside the placement
+    because the Moon has to be sized against it too, and it may be None when
+    detection fails -- in which case nothing is capped, exactly as before.
     """
     taskbar, screen = detect_desktop()
-    return place(
+    placement = place(
         corner,
         canvas_width=profile.canvas_width,
         canvas_height=profile.canvas_height,
@@ -145,6 +157,7 @@ def resolve_placement(profile: RenderProfile, corner: str) -> Placement:
         taskbar=taskbar,
         screen=screen,
     )
+    return placement, screen
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +172,15 @@ class Target:
 
     monitor_id: str | None = None
     """The COM id to set it on, or None to use the whole-desktop API."""
+
+    screen: Screen | None = None
+    """The display this image will end up on, if known.
+
+    Deliberately not the same thing as ``render``: on the fallback path we may
+    know the screen from ``detect_desktop()`` while still writing the whole
+    canvas for Windows to crop. Knowing it is what lets a single ultrawide get
+    its Moon capped.
+    """
 
 
 def caption_size(profile: RenderProfile, screen: Screen) -> int:
@@ -194,6 +216,7 @@ def plan_targets(
                 ),
                 render=screen,
                 monitor_id=display.wallpaper_id,
+                screen=screen,
             )
         )
     return tuple(targets)
@@ -206,12 +229,8 @@ def resolve_targets(config, output: Path, *, per_monitor: bool) -> tuple[Target,
     Everything else -- a single display, a preview, a machine where the shell
     will not talk to us -- takes the path this tool has always taken.
     """
-    single = (
-        Target(
-            destination=output,
-            placement=resolve_placement(config.profile, config.caption_corner),
-        ),
-    )
+    placement, screen = resolve_placement(config.profile, config.caption_corner)
+    single = (Target(destination=output, placement=placement, screen=screen),)
     if not per_monitor:
         return single
 
