@@ -16,7 +16,8 @@ from pathlib import Path
 import pytest
 
 from moonback import wallpaper
-from moonback.config import PROFILES
+from moonback.__main__ import frame_height_of
+from moonback.config import PROFILES, ConfigError
 from moonback.layout import Placement, Screen, place_native
 from moonback.monitors import Display, Monitor, Rect
 from moonback.wallpaper import (
@@ -264,7 +265,7 @@ class TestResolveTargets:
             wallpaper, "detect_displays", lambda: pytest.fail("must not probe for a preview")
         )
         monkeypatch.setattr(
-            wallpaper, "resolve_placement", lambda _p, _c: SPOT
+            wallpaper, "resolve_placement", lambda _p, _c: (SPOT, None)
         )
 
         targets = wallpaper.resolve_targets(_config(), Path("preview.tif"), per_monitor=False)
@@ -275,7 +276,7 @@ class TestResolveTargets:
 
     def test_one_monitor_takes_the_single_path(self, monkeypatch) -> None:
         monkeypatch.setattr(wallpaper, "detect_displays", lambda: DISPLAYS[:1])
-        monkeypatch.setattr(wallpaper, "resolve_placement", lambda _p, _c: SPOT)
+        monkeypatch.setattr(wallpaper, "resolve_placement", lambda _p, _c: (SPOT, None))
 
         targets = wallpaper.resolve_targets(_config(), Path("back.tif"), per_monitor=True)
 
@@ -285,7 +286,7 @@ class TestResolveTargets:
     def test_no_displays_takes_the_single_path(self, monkeypatch) -> None:
         # What a machine without usable COM looks like.
         monkeypatch.setattr(wallpaper, "detect_displays", lambda: ())
-        monkeypatch.setattr(wallpaper, "resolve_placement", lambda _p, _c: SPOT)
+        monkeypatch.setattr(wallpaper, "resolve_placement", lambda _p, _c: (SPOT, None))
 
         targets = wallpaper.resolve_targets(_config(), Path("back.tif"), per_monitor=True)
 
@@ -312,3 +313,60 @@ class _Config:
 
 def _config() -> _Config:
     return _Config()
+
+
+class TestMoonScaleInTheCommand:
+    """Shrinking the Moon must be invisible unless it is actually needed."""
+
+    def test_a_scale_of_one_emits_nothing_at_all(self, recorded) -> None:
+        # Conventional screens never trip the cap, so they must render exactly
+        # as before -- no parentheses, no resize, no resampling.
+        run_compose(recorded, moon_scale=1.0)
+        run_compose(recorded)  # the default
+
+        explicit, default = recorded[0], recorded[1]
+        assert "(" not in explicit
+        assert "-resize" not in explicit
+        assert explicit == default
+
+    def test_a_smaller_scale_wraps_the_moon_in_parentheses(self, recorded) -> None:
+        command = run_compose(recorded, moon_scale=0.553)
+
+        assert command[command.index("(") + 1] == "moon.0001.tif"
+        assert command[command.index("(") + 2] == "-resize"
+        assert command[command.index(")") - 1].startswith("55.3")
+
+    def test_only_the_moon_is_resized_not_the_canvas(self, recorded) -> None:
+        # The canvas is outside the parentheses; resizing it too would shrink
+        # the star field and leave the wallpaper short of the screen.
+        command = run_compose(recorded, moon_scale=0.5)
+
+        assert command.index("best_small.tif") < command.index("(")
+        assert command.index(")") < command.index("-composite")
+
+    def test_it_composes_before_the_screen_crop(self, recorded) -> None:
+        # The moon resize must not be mistaken for the cover-crop that follows.
+        command = run_compose(recorded, moon_scale=0.5, render=Screen(5120, 1440))
+
+        assert command.index(")") < command.index("-composite")
+        assert command.index("-composite") < command.index("-extent")
+        assert command[command.index("-extent") + 1] == "5120x1440"
+
+
+class TestFrameHeight:
+    @pytest.mark.parametrize(
+        ("resolution", "height"),
+        [("3840x2160_16x9_30p", 2160), ("5760x3240_16x9_30p", 3240)],
+    )
+    def test_reads_the_height_out_of_the_profile_resolution(
+        self, resolution: str, height: int
+    ) -> None:
+        assert frame_height_of(resolution) == height
+
+    def test_every_profile_resolution_parses(self) -> None:
+        for profile in PROFILES.values():
+            assert frame_height_of(profile.frame_resolution) > 0
+
+    def test_a_malformed_resolution_is_refused(self) -> None:
+        with pytest.raises(ConfigError, match="WIDTHxHEIGHT"):
+            frame_height_of("not-a-resolution")

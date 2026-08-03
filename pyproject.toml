@@ -43,9 +43,12 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
 
 [tool.ruff.lint.pylint]
-# download_frame and compose take injectable collaborators (sleep, jitter,
-# profile) as keyword-only arguments; five is too tight for that shape.
-max-args = 8
+# download_frame and compose take injectable collaborators (sleep, jitter) and
+# independent rendering knobs as keyword-only arguments; five is too tight for
+# that shape. compose() sits at the limit: canvas, moon, caption, destination,
+# placement, render, moon_scale and headline are each independently varied by
+# a caller or a test, so none of them collapse into another.
+max-args = 9
 
 [tool.ruff.lint.per-file-ignores]
 # Asserting on literal counts is the point of a test, not a magic number.

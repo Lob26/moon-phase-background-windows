@@ -34,11 +34,21 @@ class TestParseMooninfo:
             at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
             illumination_pct=91.40,
             cycle_age_days=11.928,
+            diameter_arcsec=1985.1,
             distance_km=361045.0,
             right_ascension_hours=4.2348,
             declination_degrees=26.3373,
         )
         assert rows[-1].at == datetime(2026, 12, 31, 23, 0, tzinfo=UTC)
+
+    def test_reads_the_apparent_diameter(self, real_2026_text: str) -> None:
+        # Drives how large the Moon is drawn; varies 14% across a year, which is
+        # why the framing maths cannot use a constant.
+        rows = parse_mooninfo(real_2026_text)
+        diameters = [row.diameter_arcsec for row in rows]
+
+        assert all(1700.0 < d < 2100.0 for d in diameters)
+        assert max(diameters) / min(diameters) == pytest.approx(1.14, abs=0.01)
 
     def test_reads_the_coordinate_columns(self, real_2026_text: str) -> None:
         # RA and Dec are what the horizon maths in visibility.py runs on.

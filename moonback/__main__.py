@@ -16,6 +16,7 @@ from .config import Config, ConfigError, OnError, load_config
 from .eclipse_views import EclipseViewError, parse_eclipse_views, view_at
 from .eclipses import EclipseError, describe_at, parse_eclipses
 from .events import describe_at as describe_events
+from .layout import moon_scale
 from .moondata import (
     MoonDataError,
     MoonHour,
@@ -91,6 +92,20 @@ def visibility_headline(config: Config, hour: MoonHour, moment: datetime) -> str
     return headline
 
 
+#: The SVS publishes per-eclipse telescopic sequences at one size only.
+ECLIPSE_FRAME_HEIGHT = 2160
+
+
+def frame_height_of(frame_resolution: str) -> int:
+    """Pixel height out of a profile's frame directory name, e.g. 3840x2160_16x9_30p."""
+    try:
+        return int(frame_resolution.split("_", 1)[0].split("x")[1])
+    except (IndexError, ValueError) as exc:
+        raise ConfigError(
+            f"frame resolution {frame_resolution!r} is not in the expected WIDTHxHEIGHT_... form"
+        ) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class FrameSource:
     """Which NASA sequence this hour's frame comes from."""
@@ -98,6 +113,14 @@ class FrameSource:
     url: str
     filename: str
     hint: str
+
+    frame_height: int
+    """Pixel height of the frame behind ``url``.
+
+    Genuinely varies: eclipse sequences are published only at 3840x2160, while
+    the 'large' profile's ordinary frames are 5760x3240. The Moon's size on the
+    canvas scales with it, so the framing maths needs the real number.
+    """
 
 
 def choose_frame(config: Config, moment: datetime, index: int) -> FrameSource:
@@ -127,6 +150,7 @@ def choose_frame(config: Config, moment: datetime, index: int) -> FrameSource:
                 url=config.eclipse_frame_url(view.svs_id, filename),
                 filename=filename,
                 hint=f"the SVS id or frame range for the {view.date} eclipse view is wrong",
+                frame_height=ECLIPSE_FRAME_HEIGHT,
             )
 
     filename = frame_filename(index)
@@ -134,6 +158,7 @@ def choose_frame(config: Config, moment: datetime, index: int) -> FrameSource:
         url=config.frame_url(filename),
         filename=filename,
         hint="the frame number or this year's SVS collection id is wrong",
+        frame_height=frame_height_of(config.profile.frame_resolution),
     )
 
 
@@ -221,6 +246,7 @@ def run(
                     destination=target.destination,
                     placement=target.placement,
                     render=target.render,
+                    moon_scale=_moon_scale_for(config, target, source, hour),
                     headline=headline,
                 )
         finally:
@@ -235,6 +261,26 @@ def run(
     else:
         logger.info("Rendered %s: %s", output, caption)
     return caption
+
+
+def _moon_scale_for(
+    config: Config, target: Target, source: FrameSource, hour: MoonHour
+) -> float:
+    """Shrink factor keeping the Moon inside this target's screen.
+
+    1.0 when the screen is unknown -- detection is best effort, and without it
+    there is no way to tell whether anything would be cut off. That is the
+    behaviour this tool always had.
+    """
+    if target.screen is None:
+        return 1.0
+    return moon_scale(
+        canvas_width=config.profile.canvas_width,
+        canvas_height=config.profile.canvas_height,
+        screen=target.screen,
+        frame_height_px=source.frame_height,
+        diameter_arcsec=hour.diameter_arcsec,
+    )
 
 
 def _prune_stale_outputs(config: Config, targets: Sequence[Target]) -> None:
