@@ -370,3 +370,33 @@ class TestFrameHeight:
     def test_a_malformed_resolution_is_refused(self) -> None:
         with pytest.raises(ConfigError, match="WIDTHxHEIGHT"):
             frame_height_of("not-a-resolution")
+
+
+class TestNoConsoleWindow:
+    """The scheduled task must not flash a console window once an hour."""
+
+    def test_imagemagick_is_launched_without_a_console(self, monkeypatch) -> None:
+        # magick.exe is a console application and pythonw.exe has no console, so
+        # without this flag Windows allocates one and puts it in the foreground.
+        seen: dict[str, object] = {}
+
+        def fake_run(command, **kwargs):
+            seen.update(kwargs)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        monkeypatch.setattr(wallpaper.subprocess, "run", fake_run)
+        compose(
+            "magick",
+            canvas=Path("c.tif"),
+            moon=Path("m.tif"),
+            caption="hi",
+            destination=Path("o.tif"),
+            placement=SPOT,
+        )
+
+        assert seen["creationflags"] == wallpaper.NO_WINDOW
+
+    def test_the_flag_is_inert_off_windows(self) -> None:
+        # CREATE_NO_WINDOW does not exist elsewhere; 0 keeps the call portable
+        # so the suite still runs on the ubuntu CI runners.
+        assert wallpaper.NO_WINDOW in (0, 0x08000000)

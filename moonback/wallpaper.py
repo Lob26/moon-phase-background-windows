@@ -47,6 +47,15 @@ HEADLINE_COLOUR = "#ffc66d"
 #: The headline is drawn a little smaller than the caption it sits above.
 HEADLINE_SCALE = 0.82
 
+#: Keep ImageMagick from opening a console window on top of whatever you are doing.
+#:
+#: magick.exe is a console application, and the scheduled task runs pythonw.exe,
+#: which has no console of its own -- so Windows allocates a fresh one for the
+#: child and flashes it in the foreground, once an hour, forever. Redirecting
+#: the pipes with capture_output does not prevent that; only this flag does.
+#: Zero on any other platform, where the flag does not exist and is not needed.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 def compose(
     magick: str,
@@ -128,7 +137,9 @@ def compose(
     logger.debug("Running %s", " ".join(command))
     # check=False on purpose: CalledProcessError's message drops stderr, which is
     # exactly the detail needed to tell "no such font" from "cannot write output".
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        command, capture_output=True, text=True, check=False, creationflags=NO_WINDOW
+    )
     if result.returncode != 0:
         raise RenderError(
             f"ImageMagick exited {result.returncode} while composing {destination.name}: "
