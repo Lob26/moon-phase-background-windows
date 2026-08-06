@@ -38,7 +38,7 @@ Python itself is not a prerequisite: `uv` fetches the interpreter it needs.
 ## 2. Install
 
 ```powershell
-git clone https://github.com/pedrolobato/moon-phase-background-windows
+git clone https://github.com/Lob26/moon-phase-background-windows
 cd moon-phase-background-windows
 .\setup_environment.ps1
 ```
