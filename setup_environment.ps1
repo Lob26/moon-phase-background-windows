@@ -288,6 +288,40 @@ Write-Host "Dependencies installed" -ForegroundColor Green
 $pythonw = Join-Path $repo '.venv\Scripts\pythonw.exe'
 if (-not (Test-Path $pythonw)) { throw "uv sync did not produce $pythonw" }
 
+# --------- A genuinely windowless interpreter -------------------------
+# uv builds BOTH .venv\Scripts\python.exe and pythonw.exe as console
+# executables (PE subsystem 3, byte-identical trampolines). Windows therefore
+# allocates a console the moment the scheduled task starts, and you get a black
+# PseudoConsoleWindow on top of your work, once an hour, forever.
+#
+# uv's *base* interpreter does ship a real GUI pythonw.exe (subsystem 2).
+# Copying it into the venv -- next to pyvenv.cfg, with its runtime DLL -- gives
+# an interpreter that still resolves the venv and its editable install, but can
+# never own a console. Verified: the trampoline shows a PseudoConsoleWindow,
+# this does not.
+#
+# Named distinctly so `uv sync` never has an opinion about it. Neither
+# [project.gui-scripts] nor uvw.exe fixes this: both end up re-launching the
+# console trampoline.
+$quietPython = Join-Path $repo '.venv\Scripts\pythonw-gui.exe'
+$venvHome = ((Get-Content (Join-Path $repo '.venv\pyvenv.cfg') |
+              Select-String '^home\s*=') -replace '^home\s*=\s*', '').Trim()
+$basePythonw = Join-Path $venvHome 'pythonw.exe'
+
+if (Test-Path $basePythonw) {
+    Copy-Item $basePythonw $quietPython -Force
+    # The copy needs its runtime beside it: python313.dll and friends live with
+    # the base interpreter, not in the venv.
+    Get-ChildItem (Join-Path $venvHome 'python*.dll') -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^python\d' } |
+        ForEach-Object { Copy-Item $_.FullName (Join-Path $repo '.venv\Scripts') -Force }
+    $pythonw = $quietPython
+    Write-Host "Using a windowless interpreter, so no console appears each hour" -ForegroundColor Green
+} else {
+    Write-Host "No GUI interpreter found beside $venvHome" -ForegroundColor Yellow
+    Write-Host "  Falling back to $pythonw - expect a console window each run." -ForegroundColor Yellow
+}
+
 # --------- Task XML -----------------------------------------------------
 # Start at the next whole hour: NASA publishes one frame per hour, so there is
 # nothing new to fetch between them. No EndBoundary, so the task never expires.
