@@ -11,6 +11,12 @@ dependencies = ["httpx>=0.28,<0.29"]
 [project.scripts]
 moonback = "moonback.__main__:main"
 
+# No [project.gui-scripts] twin. It looks like the obvious fix for the hourly
+# console flash and is not: uv's generated GUI launcher immediately re-launches
+# .venv\Scripts\pythonw.exe, which uv builds as a CONSOLE executable, so the
+# window comes back anyway. Measured, not assumed. setup_environment.ps1 solves
+# it by pointing the scheduled task at a genuinely windowless interpreter.
+
 [project.urls]
 Homepage = "https://github.com/pedrolobato/moon-phase-background-windows"
 
