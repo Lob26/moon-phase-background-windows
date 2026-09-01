@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v7
       # Pinned exactly: setup-uv publishes moving major tags only up to v7, so
       # there is no "v9" to follow. .github/dependabot.yml moves this pin.
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
       - run: uv run ruff check --no-fix .
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v7
       # Pinned exactly: setup-uv publishes moving major tags only up to v7, so
       # there is no "v9" to follow. .github/dependabot.yml moves this pin.
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
       # The suite is pure: no network, no ImageMagick, no Windows. That is why
